@@ -68,3 +68,8 @@ components only render state produced there.
 Move `WASD` / arrows · Sprint `Shift` · Shoot `Space` · Pass `E` ·
 Loft `Ctrl` · Slide `F` · Switch player `Q` · Camera `C`.
 In-game Options (top-left) pauses the match and lists the full scheme.
+
+## License
+
+All rights reserved. This code is public for visibility only — no license is
+granted to use, copy, or redistribute it.
