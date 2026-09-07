@@ -5,6 +5,8 @@ practice and online 1 v 1, built with React Three Fiber on TanStack Start.
 
 Live: https://goodball.imranmn.life
 
+![Goodball gameplay screenshot](./docs/screenshot.png)
+
 ## Features
 
 - Full match mode with two halves, a 15x match clock, extra time and penalties
