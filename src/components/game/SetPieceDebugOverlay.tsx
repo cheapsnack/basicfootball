@@ -17,18 +17,23 @@ export function SetPieceDebugOverlay() {
   const pz = (z: number) => ((z + FIELD.halfWidth) / FIELD.width) * H;
   const fmt = (p: { x: number; z: number }) => `${p.x.toFixed(1)}, ${p.z.toFixed(1)}`;
 
+  // This overlay is a developer tool; never expose the toggle to players.
+  const isDev = import.meta.env.DEV;
+
   return (
     <>
-      <button
-        onClick={toggle}
-        className={`fixed left-4 top-[68px] z-30 rounded-md px-3 py-1.5 font-sans text-[9px] font-black uppercase tracking-[0.22em] shadow-lg backdrop-blur-sm transition-colors ${
-          on ? "bg-emerald-500 text-white" : "bg-foreground/70 text-background/80"
-        }`}
-      >
-        Debug
-      </button>
+      {isDev && (
+        <button
+          onClick={toggle}
+          className={`fixed left-4 top-[68px] z-30 rounded-md px-3 py-1.5 font-sans text-[9px] font-black uppercase tracking-[0.22em] shadow-lg backdrop-blur-sm transition-colors ${
+            on ? "bg-emerald-500 text-white" : "bg-foreground/70 text-background/80"
+          }`}
+        >
+          Debug
+        </button>
+      )}
 
-      {on && (
+      {isDev && on && (
         <div className="pointer-events-none fixed bottom-24 left-4 z-30 rounded-lg bg-foreground/85 p-3 font-mono text-[10px] text-background shadow-xl backdrop-blur-sm">
           <div className="mb-2 font-sans text-[9px] font-black uppercase tracking-[0.22em] text-background/60">
             Set-piece debug
