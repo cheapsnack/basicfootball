@@ -1,7 +1,7 @@
 {
   "name": "arcade-football",
   "version": "0.1.0",
-  "description": "3D arcade football (soccer) — real-time 11v11 matches, penalty shootouts, free kicks, and online 1v1. React Three Fiber + TanStack Start.",
+  "description": "3D arcade football (soccer) \u2014 real-time 11v11 matches, penalty shootouts, free kicks, and online 1v1. React Three Fiber + TanStack Start.",
   "keywords": [
     "football",
     "soccer",
@@ -16,7 +16,7 @@
   ],
   "license": "UNLICENSED",
   "private": true,
-  "homepage": "https://goodball.imranmn.life",
+  "homepage": "https://goodball.lovable.app",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/cheapsnack/goodballl.git"
