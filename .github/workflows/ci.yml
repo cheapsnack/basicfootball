@@ -16,11 +16,18 @@ jobs:
       VITE_SUPABASE_PUBLISHABLE_KEY: ci-placeholder
       VITE_SUPABASE_PROJECT_ID: placeholder
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
-      - run: bun install --frozen-lockfile
+      # bun.lock is generated inside Lovable's sandbox and pins packages to
+      # Lovable's private npm mirror, which returns 403 outside Lovable.
+      # Drop it here so bun resolves from the public registry. The lockfile
+      # in the repo is untouched (this only affects the CI checkout).
+      - name: Install (public registry)
+        run: |
+          rm -f bun.lock
+          bun install
       - name: Unit tests
         run: bun run test
       - name: Production build
