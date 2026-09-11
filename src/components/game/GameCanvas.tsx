@@ -1,5 +1,5 @@
 import { Canvas } from "@react-three/fiber";
-import { Environment, Lightformer } from "@react-three/drei";
+import { Environment, Lightformer, Sky } from "@react-three/drei";
 import { MatchScene } from "./MatchScene";
 import { BallTrail } from "./BallTrail";
 import { ControlsHint } from "./ControlsHint";
@@ -17,6 +17,7 @@ import { useTouchInput } from "../../hooks/useTouchInput";
 import { useGameStore } from "../../game/store/useGameStore";
 
 const SKY = "#8fc3e8";
+const SUN: [number, number, number] = [45, 70, 30];
 
 export function GameCanvas({ onExit }: { onExit?: (() => void) | undefined }) {
   const inShootout = useGameStore((s) => s.matchStatus === "penalties");
@@ -28,12 +29,14 @@ export function GameCanvas({ onExit }: { onExit?: (() => void) | undefined }) {
     <div className="fixed inset-0">
       <Canvas shadows dpr={[1, 2]} camera={{ position: [0, 26, 30], fov: 45, far: 600 }}>
         <color attach="background" args={[SKY]} />
-        <fog attach="fog" args={[SKY, 120, 320]} />
+        {/* Fog starts past the stands so the stadium reads clearly. */}
+        <fog attach="fog" args={[SKY, 160, 380]} />
+        <Sky distance={500} sunPosition={SUN} turbidity={6} rayleigh={1.4} mieCoefficient={0.004} />
 
         <ambientLight intensity={0.55} />
         <hemisphereLight args={["#cfe6ff", "#2e6b33", 0.5]} />
         <directionalLight
-          position={[45, 70, 30]}
+          position={SUN}
           intensity={2}
           castShadow
           shadow-mapSize-width={2048}

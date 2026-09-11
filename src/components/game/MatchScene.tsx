@@ -3,6 +3,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 
 import { Pitch } from "./Pitch";
+import { Stadium } from "./Stadium";
 import { Goal } from "./Goal";
 import { Player, PLAYER_HEIGHT } from "./Player";
 import { Ball } from "./Ball";
@@ -1362,6 +1363,7 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
   return (
     <>
       <Pitch />
+      <Stadium />
       <Goal x={-PITCH_LENGTH / 2} side={-1} />
       <Goal x={PITCH_LENGTH / 2} side={1} />
 
