@@ -13,7 +13,13 @@ import { useKeyboardInput, LOCAL_P1_KEYS, LOCAL_P2_KEYS, SOLO_KEYS } from "../..
 import type { PlayerInput } from "../../game/types";import { AWAY_DEFEND_SIDE, HOME_DEFEND_SIDE, PITCH, useGameStore } from "../../game/store/useGameStore";
 import { clampToPitch, paramsFromAttributes, stepMovement } from "../../game/logic/movement";
 import { applyImpulse, BALL_RADIUS, stepBall, STRIKE_TUNING } from "../../game/logic/ballPhysics";
-import { canStrike, resolveStrike, stepCharge } from "../../game/logic/striking";
+import {
+  aiShotFromAttributes,
+  canStrike,
+  resolveStrike,
+  stepCharge,
+  strikeParamsFromAttributes,
+} from "../../game/logic/striking";
 import {
   CAMERA_TUNING,
   stepBroadcastCamera,
@@ -21,7 +27,12 @@ import {
   type CameraFrame,
   type CameraMode,
 } from "../../game/logic/camera";
-import { stepGoalkeeper, tryKeeperClaim, KEEPER_HANDS } from "../../game/logic/ai/goalkeeper";
+import {
+  keeperParamsFromAttributes,
+  stepGoalkeeper,
+  tryKeeperClaim,
+  KEEPER_HANDS,
+} from "../../game/logic/ai/goalkeeper";
 import {
   buildOutfield,
   presserIndices,
@@ -32,7 +43,15 @@ import {
   aiShotDirection,
 } from "../../game/logic/ai/outfield";
 import { DIFFICULTY_TUNING } from "../../game/logic/ai/difficulty";
-import { possessionBallPosition, tryCapture, trySteal, type CaptureCandidate, type Possession } from "../../game/logic/possession";
+import {
+  possessionBallPosition,
+  shieldFromAttributes,
+  stealReachFromAttributes,
+  tryCapture,
+  trySteal,
+  type CaptureCandidate,
+  type Possession,
+} from "../../game/logic/possession";
 import { detectGoal, isPlayFrozen, MATCH_TUNING, periodLength, TOTAL_PERIODS, type TeamSide } from "../../game/logic/match";
 import { initShootout } from "../../game/logic/penalties";
 import {
@@ -45,7 +64,13 @@ import {
 } from "../../game/logic/restarts";
 import { playAward, playCard, playCrowdGroan, playCrowdRoar, playKick, playWhistle } from "../../game/logic/audio";
 import { pickTakerIndex, takerPlacement } from "../../game/logic/setpiece";
-import { attemptTackleImpulse, detectFoulOnOpponent, tackleDash, TACKLE_TUNING } from "../../game/logic/tackle";
+import {
+  attemptTackleImpulse,
+  detectFoulOnOpponent,
+  tackleDash,
+  tackleParamsFromAttributes,
+  TACKLE_TUNING,
+} from "../../game/logic/tackle";
 import { cardForFoul, type Booking } from "../../game/logic/bookings";
 import { getClub, playerAt } from "../../game/data/clubs";
 import { useRoomChannel } from "../../multiplayer/useRoomChannel";
@@ -109,6 +134,18 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
 
   const homeParams = useRef(homeXI.map((e) => paramsFromAttributes(e.player.attributes))).current;
   const awayParams = useRef(awayXI.map((e) => paramsFromAttributes(e.player.attributes))).current;
+  // shot / pass / defend / dribble / gk — neutral at the roster median, so
+  // an average squad plays exactly as before; see logic/attributes.ts.
+  const homeStrike = useRef(homeXI.map((e) => strikeParamsFromAttributes(e.player.attributes))).current;
+  const awayStrike = useRef(awayXI.map((e) => strikeParamsFromAttributes(e.player.attributes))).current;
+  const homeTackle = useRef(homeXI.map((e) => tackleParamsFromAttributes(e.player.attributes))).current;
+  const awayTackle = useRef(awayXI.map((e) => tackleParamsFromAttributes(e.player.attributes))).current;
+  const homeSteal = useRef(homeXI.map((e) => stealReachFromAttributes(e.player.attributes))).current;
+  const awaySteal = useRef(awayXI.map((e) => stealReachFromAttributes(e.player.attributes))).current;
+  const homeShield = useRef(homeXI.map((e) => shieldFromAttributes(e.player.attributes))).current;
+  const awayShield = useRef(awayXI.map((e) => shieldFromAttributes(e.player.attributes))).current;
+  const homeKeeper = useRef(keeperParamsFromAttributes(homeGKPlayer.attributes)).current;
+  const awayKeeper = useRef(keeperParamsFromAttributes(awayGKPlayer.attributes)).current;
   /** Per-player shot decision state, indexed like homeXI/awayXI — cooldown gates repeat shots; windup delays the strike itself for a cheap "reaction time" feel. */
   const homeShotState = useRef(
     homeXI.map(() => ({ cooldown: 0, windupUntil: 0, windupDir: null as { x: number; z: number } | null })),
@@ -775,7 +812,7 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
           receiverIndex = receiver.index;
         }
       }
-      const strike = resolveStrike(controlled, prevCharge, strikeTarget);
+      const strike = resolveStrike(controlled, prevCharge, strikeTarget, homeStrike[controlledIndex]);
       ball = applyImpulse(ball, strike.direction, strike.speed, strike.lift);
       cooldown = STRIKE_TUNING.cooldown;
       lastTouch = "home";
@@ -816,7 +853,12 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
           awayReceiverIndex = receiver.index;
         }
       }
-      const strike = resolveStrike(awayControlled, prevAwayCharge, awayStrikeTarget);
+      const strike = resolveStrike(
+        awayControlled,
+        prevAwayCharge,
+        awayStrikeTarget,
+        awayControlledIndex === null ? undefined : awayStrike[awayControlledIndex],
+      );
       ball = applyImpulse(ball, strike.direction, strike.speed, strike.lift);
       awayCooldown = STRIKE_TUNING.cooldown;
       lastTouch = "away";
@@ -857,8 +899,9 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
       if (shotState.windupUntil > 0) {
         if (state.clock.elapsedTime >= shotState.windupUntil) {
           if (restartLock === null || restartLock === "home") {
-            const dir = shotState.windupDir ?? aiShotDirection(p, homeGoalX, diff.shotAccuracy);
-            ball = applyImpulse(ball, dir, diff.shotPower, 0.12);
+            const aiShot = aiShotFromAttributes(diff.shotAccuracy, diff.shotPower, homeXI[i]!.player.attributes);
+            const dir = shotState.windupDir ?? aiShotDirection(p, homeGoalX, aiShot.accuracy);
+            ball = applyImpulse(ball, dir, aiShot.power, 0.12);
             lastTouch = "home";
             lastTouchIndex = i;
             useGameStore.getState().recordShot("home");
@@ -884,7 +927,11 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
         const distToGoal = Math.hypot(homeGoalX - p.position.x, p.position.z);
         if (shotState.cooldown <= 0 && distToGoal < diff.shootRange) {
           shotState.windupUntil = state.clock.elapsedTime + diff.shotWindup;
-          shotState.windupDir = aiShotDirection(p, homeGoalX, diff.shotAccuracy);
+          shotState.windupDir = aiShotDirection(
+            p,
+            homeGoalX,
+            aiShotFromAttributes(diff.shotAccuracy, diff.shotPower, homeXI[i]!.player.attributes).accuracy,
+          );
           return clampToPitch(
             stepMovement(p, { x: 0, z: 0, sprint: false }, homeParams[i] ?? homeParams[0]!, dt),
             PITCH.halfLength,
@@ -931,8 +978,9 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
       if (shotState.windupUntil > 0) {
         if (state.clock.elapsedTime >= shotState.windupUntil) {
           if (restartLock === null || restartLock === "away") {
-            const dir = shotState.windupDir ?? aiShotDirection(p, awayGoalX, diff.shotAccuracy);
-            ball = applyImpulse(ball, dir, diff.shotPower, 0.12);
+            const aiShot = aiShotFromAttributes(diff.shotAccuracy, diff.shotPower, awayXI[i]!.player.attributes);
+            const dir = shotState.windupDir ?? aiShotDirection(p, awayGoalX, aiShot.accuracy);
+            ball = applyImpulse(ball, dir, aiShot.power, 0.12);
             lastTouch = "away";
             lastTouchIndex = i;
             useGameStore.getState().recordShot("away");
@@ -958,7 +1006,11 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
         const distToGoal = Math.hypot(awayGoalX - p.position.x, p.position.z);
         if (shotState.cooldown <= 0 && distToGoal < diff.shootRange) {
           shotState.windupUntil = state.clock.elapsedTime + diff.shotWindup;
-          shotState.windupDir = aiShotDirection(p, awayGoalX, diff.shotAccuracy);
+          shotState.windupDir = aiShotDirection(
+            p,
+            awayGoalX,
+            aiShotFromAttributes(diff.shotAccuracy, diff.shotPower, awayXI[i]!.player.attributes).accuracy,
+          );
           return clampToPitch(
             stepMovement(p, { x: 0, z: 0, sprint: false }, awayParams[i] ?? awayParams[0]!, dt),
             PITCH.halfLength,
@@ -1057,7 +1109,7 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
     };
 
     if (tackleState.current.active > 0 && (restartLock === null || restartLock === "home")) {
-      const knocked = attemptTackleImpulse(ballForTackle, controlled.position);
+      const knocked = attemptTackleImpulse(ballForTackle, controlled.position, homeTackle[controlledIndex]);
       if (knocked) {
         ball = knocked;
         lastTouch = "home";
@@ -1072,7 +1124,7 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
         tackleState.current.active = 0;
         playKick(0.55);
       } else {
-        const victim = detectFoulOnOpponent(controlled.position, store.awayOutfield);
+        const victim = detectFoulOnOpponent(controlled.position, store.awayOutfield, homeTackle[controlledIndex]);
         if (victim !== null) {
           tackleState.current.active = 0;
           stageFoul("home", controlledIndex, controlled.position);
@@ -1086,7 +1138,11 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
       awayTackleState.current.active > 0 &&
       (restartLock === null || restartLock === "away")
     ) {
-      const knocked = attemptTackleImpulse(ballForTackle, awayControlled.position);
+      const knocked = attemptTackleImpulse(
+        ballForTackle,
+        awayControlled.position,
+        awayTackle[awayControlledIndex ?? 0],
+      );
       if (knocked) {
         ball = knocked;
         lastTouch = "away";
@@ -1101,7 +1157,11 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
         awayTackleState.current.active = 0;
         playKick(0.55);
       } else {
-        const victim = detectFoulOnOpponent(awayControlled.position, store.homeOutfield);
+        const victim = detectFoulOnOpponent(
+          awayControlled.position,
+          store.homeOutfield,
+          awayTackle[awayControlledIndex ?? 0],
+        );
         if (victim !== null) {
           awayTackleState.current.active = 0;
           stageFoul("away", awayControlledIndex ?? 0, awayControlled.position);
@@ -1117,11 +1177,11 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
     }
 
     // --- goalkeeper movement (positioning/diving reacts to the ball as of any strike/tackle already resolved this frame) ---
-    const homeDecision = stepGoalkeeper(store.homeGK, store.homeGKState, ball, HOME_DEFEND_SIDE, dt);
+    const homeDecision = stepGoalkeeper(store.homeGK, store.homeGKState, ball, HOME_DEFEND_SIDE, dt, homeKeeper);
     const homeGK = driveGoalkeeper(store.homeGK, homeDecision, homeGKParams, HOME_DEFEND_SIDE, dt);
     const homeGKState = homeDecision.state;
 
-    const awayDecision = stepGoalkeeper(store.awayGK, store.awayGKState, ball, AWAY_DEFEND_SIDE, dt);
+    const awayDecision = stepGoalkeeper(store.awayGK, store.awayGKState, ball, AWAY_DEFEND_SIDE, dt, awayKeeper);
     const awayGK = driveGoalkeeper(store.awayGK, awayDecision, awayGKParams, AWAY_DEFEND_SIDE, dt);
     const awayGKState = awayDecision.state;
 
@@ -1139,11 +1199,16 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
         const opponentBodies: CaptureCandidate[] = [];
         const stealTeam: TeamSide = possession.team === "home" ? "away" : "home";
         if (stealTeam === "home") {
-          homeOutfield.forEach((b, i) => opponentBodies.push({ team: "home", index: i, body: b }));
+          homeOutfield.forEach((b, i) =>
+            opponentBodies.push({ team: "home", index: i, body: b, reach: homeSteal[i] }),
+          );
         } else {
-          awayOutfield.forEach((b, i) => opponentBodies.push({ team: "away", index: i, body: b }));
+          awayOutfield.forEach((b, i) =>
+            opponentBodies.push({ team: "away", index: i, body: b, reach: awaySteal[i] }),
+          );
         }
-        const stolen = trySteal(possessor, opponentBodies);
+        const shield = (possession.team === "home" ? homeShield : awayShield)[possession.index] ?? 1;
+        const stolen = trySteal(possessor, opponentBodies, shield);
         if (stolen) {
           possession = stolen;
           lastTouch = stolen.team;
@@ -1215,7 +1280,7 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
       ball = stepBall(ball, dt, { halfLength: PITCH.halfLength, halfWidth: PITCH.halfWidth });
 
       // --- keeper hands: claim a loose ball, catching it when it's takeable ---
-      const homeClaim = tryKeeperClaim(ball, homeGK, homeGKState, HOME_DEFEND_SIDE);
+      const homeClaim = tryKeeperClaim(ball, homeGK, homeGKState, HOME_DEFEND_SIDE, homeKeeper);
       if (homeClaim) {
         ball = homeClaim.ball;
         lastTouch = homeClaim.kind === "caught" ? "home" : "away";
@@ -1224,7 +1289,7 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
         }
       }
       const awayClaim = !keeperHold.current
-        ? tryKeeperClaim(ball, awayGK, awayGKState, AWAY_DEFEND_SIDE)
+        ? tryKeeperClaim(ball, awayGK, awayGKState, AWAY_DEFEND_SIDE, awayKeeper)
         : null;
       if (awayClaim) {
         ball = awayClaim.ball;
