@@ -73,10 +73,12 @@ export function PlayerNamesPanel() {
     return () => clearInterval(id);
   }, [twoHuman]);
 
+  const hudStamina = useGameStore((s) => s.hudStamina);
+
   return (
     <>
-      {home && <NameCard row={home} side="left" tag="YOU" />}
-      {away && <NameCard row={away} side="right" tag="P2" />}
+      {home && <NameCard row={home} side="left" tag="YOU" stamina={hudStamina.home} />}
+      {away && <NameCard row={away} side="right" tag="P2" stamina={hudStamina.away} />}
     </>
   );
 }
@@ -85,11 +87,15 @@ function NameCard({
   row,
   side,
   tag,
+  stamina,
 }: {
   row: NonNullable<Row>;
   side: "left" | "right";
   tag: string;
+  stamina: number;
 }) {
+  const pct = Math.round(stamina * 100);
+  const staminaColor = stamina > 0.4 ? "#63d68a" : stamina > 0.15 ? "#f4c20d" : "#e2444a";
   return (
     <div
       className={`gb-panel pointer-events-none fixed bottom-4 z-10 hidden w-[300px] items-center gap-3 px-3 py-2.5 md:flex ${
@@ -109,6 +115,15 @@ function NameCard({
         <span className="font-mono text-[11px] tracking-[0.1em] text-[#9aa4af]">
           {row.position} · {row.club}
         </span>
+        <div
+          className="mt-1 h-1 w-full overflow-hidden rounded-sm bg-white/10"
+          title={`Stamina ${pct}%`}
+        >
+          <div
+            className="h-full rounded-sm transition-[width] duration-200"
+            style={{ width: `${pct}%`, background: staminaColor }}
+          />
+        </div>
       </div>
       <span
         className={`font-display text-[14px] font-extrabold tracking-[0.1em] ${side === "left" ? "ml-auto" : "mr-auto"}`}

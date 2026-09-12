@@ -65,6 +65,14 @@ import {
 import { playAward, playCard, playCrowdGroan, playCrowdRoar, playKick, playWhistle } from "../../game/logic/audio";
 import { pickTakerIndex, takerPlacement } from "../../game/logic/setpiece";
 import {
+  applyStamina,
+  FULL_STAMINA,
+  gateSprint,
+  recoverAtBreak,
+  stepStamina,
+  type StaminaState,
+} from "../../game/logic/stamina";
+import {
   attemptTackleImpulse,
   detectFoulOnOpponent,
   tackleDash,
@@ -146,6 +154,33 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
   const awayShield = useRef(awayXI.map((e) => shieldFromAttributes(e.player.attributes))).current;
   const homeKeeper = useRef(keeperParamsFromAttributes(homeGKPlayer.attributes)).current;
   const awayKeeper = useRef(keeperParamsFromAttributes(awayGKPlayer.attributes)).current;
+
+  /**
+   * Per-outfielder stamina tanks. Frame data, so a ref — the HUD gets a
+   * coarse copy for the controlled players a few times a second.
+   */
+  const stamina = useRef<{ home: StaminaState[]; away: StaminaState[] }>({
+    home: homeXI.map(() => FULL_STAMINA),
+    away: awayXI.map(() => FULL_STAMINA),
+  });
+  const staminaHudAt = useRef(0);
+
+  /** stepMovement with the sprint economy applied: gates sprint, scales speed, drains/recovers the tank. */
+  const stepOutfieldBody = (
+    team: TeamSide,
+    i: number,
+    body: Kinematics,
+    input: MovementInput,
+    params: ReturnType<typeof paramsFromAttributes>,
+    dt: number,
+  ): Kinematics => {
+    const tanks = stamina.current[team];
+    const s = tanks[i] ?? FULL_STAMINA;
+    const gated = gateSprint(input, s);
+    const next = stepMovement(body, gated, applyStamina(params, s), dt);
+    tanks[i] = stepStamina(s, gated, next, dt);
+    return next;
+  };
   /** Per-player shot decision state, indexed like homeXI/awayXI — cooldown gates repeat shots; windup delays the strike itself for a cheap "reaction time" feel. */
   const homeShotState = useRef(
     homeXI.map(() => ({ cooldown: 0, windupUntil: 0, windupDir: null as { x: number; z: number } | null })),
@@ -364,6 +399,16 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
       possessionFlushAt.current = state.clock.elapsedTime;
       flushPossession();
     }
+    if (state.clock.elapsedTime - staminaHudAt.current > 0.25) {
+      staminaHudAt.current = state.clock.elapsedTime;
+      const cur = useGameStore.getState();
+      const home = stamina.current.home[cur.controlledIndex]?.tank ?? 1;
+      const ai = cur.awayControlledIndex;
+      const away = ai === null ? 1 : (stamina.current.away[ai]?.tank ?? 1);
+      if (Math.abs(cur.hudStamina.home - home) > 0.01 || Math.abs(cur.hudStamina.away - away) > 0.01) {
+        useGameStore.setState({ hudStamina: { home, away } });
+      }
+    }
     const store = useGameStore.getState();
     // Options overlay open — freeze the entire simulation (and the camera).
     if (store.paused) return;
@@ -499,19 +544,19 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
             if (sentHome.has(i)) return benchBody("home", i);
             const params = homeParams[i] ?? homeParams[0]!;
             if (i === controlledIndex) {
-              return clampToPitch(stepMovement(p, keys, params, dt), PITCH.halfLength, PITCH.halfWidth);
+              return clampToPitch(stepOutfieldBody("home", i, p, keys, params, dt), PITCH.halfLength, PITCH.halfWidth);
             }
             const ai = stepOutfield(p, homeXI[i]!.role, refBall, false, mentality);
-            return clampToPitch(stepMovement(p, ai, params, dt), PITCH.halfLength, PITCH.halfWidth);
+            return clampToPitch(stepOutfieldBody("home", i, p, ai, params, dt), PITCH.halfLength, PITCH.halfWidth);
           });
           const awayOutfield = store.awayOutfield.map((p, i) => {
             if (sentAway.has(i)) return benchBody("away", i);
             const params = awayParams[i] ?? awayParams[0]!;
             if (hasAwayHumanNow && i === awayControlledIndex) {
-              return clampToPitch(stepMovement(p, awayKeysNow, params, dt), PITCH.halfLength, PITCH.halfWidth);
+              return clampToPitch(stepOutfieldBody("away", i, p, awayKeysNow, params, dt), PITCH.halfLength, PITCH.halfWidth);
             }
             const ai = stepOutfield(p, awayXI[i]!.role, refBall, false, mentality);
-            return clampToPitch(stepMovement(p, ai, params, dt), PITCH.halfLength, PITCH.halfWidth);
+            return clampToPitch(stepOutfieldBody("away", i, p, ai, params, dt), PITCH.halfLength, PITCH.halfWidth);
           });
 
           useGameStore.setState({ statusTimer: remaining, homeOutfield, awayOutfield });
@@ -714,7 +759,7 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
 
     const controlledBefore = store.homeOutfield[controlledIndex] ?? store.homeOutfield[0]!;
     const controlledParams = homeParams[controlledIndex] ?? homeParams[0]!;
-    let controlled = stepMovement(controlledBefore, move, controlledParams, dt);
+    let controlled = stepOutfieldBody("home", controlledIndex, controlledBefore, move, controlledParams, dt);
     controlled = clampToPitch(controlled, PITCH.halfLength, PITCH.halfWidth);
 
     // --- tackle: home controlled player (one-shot dash, not a hold) ---
@@ -752,7 +797,7 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
       const awayControlledBefore = store.awayOutfield[idx] ?? store.awayOutfield[0]!;
       const awayControlledParams = awayParams[idx] ?? awayParams[0]!;
       awayControlled = clampToPitch(
-        stepMovement(awayControlledBefore, awayMove, awayControlledParams, dt),
+        stepOutfieldBody("away", idx, awayControlledBefore, awayMove, awayControlledParams, dt),
         PITCH.halfLength,
         PITCH.halfWidth,
       );
@@ -916,7 +961,7 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
           shotState.windupDir = null;
         }
         return clampToPitch(
-          stepMovement(p, { x: 0, z: 0, sprint: false }, homeParams[i] ?? homeParams[0]!, dt),
+          stepOutfieldBody("home", i, p, { x: 0, z: 0, sprint: false }, homeParams[i] ?? homeParams[0]!, dt),
           PITCH.halfLength,
           PITCH.halfWidth,
         );
@@ -933,14 +978,14 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
             aiShotFromAttributes(diff.shotAccuracy, diff.shotPower, homeXI[i]!.player.attributes).accuracy,
           );
           return clampToPitch(
-            stepMovement(p, { x: 0, z: 0, sprint: false }, homeParams[i] ?? homeParams[0]!, dt),
+            stepOutfieldBody("home", i, p, { x: 0, z: 0, sprint: false }, homeParams[i] ?? homeParams[0]!, dt),
             PITCH.halfLength,
             PITCH.halfWidth,
           );
         }
         const ai = dribbleTowardGoal(p, homeGoalX, store.awayOutfield, store.homeOutfield);
         const params = scaleParams(homeParams[i] ?? homeParams[0]!);
-        return clampToPitch(stepMovement(p, ai, params, dt), PITCH.halfLength, PITCH.halfWidth);
+        return clampToPitch(stepOutfieldBody("home", i, p, ai, params, dt), PITCH.halfLength, PITCH.halfWidth);
       }
 
       const isPresserNow = homePressers.has(i);
@@ -955,12 +1000,12 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
       if (!isPresserNow && carrier && homeXI[i]!.role.slot.position !== "FWD") {
         const ai = jockeyDefender(p, carrier, HOME_DEFEND_SIDE * PITCH.halfLength, store.homeOutfield);
         const params = scaleParams(homeParams[i] ?? homeParams[0]!);
-        return clampToPitch(stepMovement(p, ai, params, dt), PITCH.halfLength, PITCH.halfWidth);
+        return clampToPitch(stepOutfieldBody("home", i, p, ai, params, dt), PITCH.halfLength, PITCH.halfWidth);
       }
 
       const ai = stepOutfield(p, homeXI[i]!.role, store.ball, isPresserNow, mentality);
       const params = scaleParams(homeParams[i] ?? homeParams[0]!);
-      return clampToPitch(stepMovement(p, ai, params, dt), PITCH.halfLength, PITCH.halfWidth);
+      return clampToPitch(stepOutfieldBody("home", i, p, ai, params, dt), PITCH.halfLength, PITCH.halfWidth);
     });
 
     // --- away outfield (AI, except a connected guest's/local P2's player) ---
@@ -995,7 +1040,7 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
           shotState.windupDir = null;
         }
         return clampToPitch(
-          stepMovement(p, { x: 0, z: 0, sprint: false }, awayParams[i] ?? awayParams[0]!, dt),
+          stepOutfieldBody("away", i, p, { x: 0, z: 0, sprint: false }, awayParams[i] ?? awayParams[0]!, dt),
           PITCH.halfLength,
           PITCH.halfWidth,
         );
@@ -1012,14 +1057,14 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
             aiShotFromAttributes(diff.shotAccuracy, diff.shotPower, awayXI[i]!.player.attributes).accuracy,
           );
           return clampToPitch(
-            stepMovement(p, { x: 0, z: 0, sprint: false }, awayParams[i] ?? awayParams[0]!, dt),
+            stepOutfieldBody("away", i, p, { x: 0, z: 0, sprint: false }, awayParams[i] ?? awayParams[0]!, dt),
             PITCH.halfLength,
             PITCH.halfWidth,
           );
         }
         const ai = dribbleTowardGoal(p, awayGoalX, store.homeOutfield, store.awayOutfield);
         const params = scaleParams(awayParams[i] ?? awayParams[0]!);
-        return clampToPitch(stepMovement(p, ai, params, dt), PITCH.halfLength, PITCH.halfWidth);
+        return clampToPitch(stepOutfieldBody("away", i, p, ai, params, dt), PITCH.halfLength, PITCH.halfWidth);
       }
 
       const isPresserNow = awayPressers.has(i);
@@ -1032,12 +1077,12 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
       if (!isPresserNow && carrier && awayXI[i]!.role.slot.position !== "FWD") {
         const ai = jockeyDefender(p, carrier, AWAY_DEFEND_SIDE * PITCH.halfLength, store.awayOutfield);
         const params = scaleParams(awayParams[i] ?? awayParams[0]!);
-        return clampToPitch(stepMovement(p, ai, params, dt), PITCH.halfLength, PITCH.halfWidth);
+        return clampToPitch(stepOutfieldBody("away", i, p, ai, params, dt), PITCH.halfLength, PITCH.halfWidth);
       }
 
       const ai = stepOutfield(p, awayXI[i]!.role, store.ball, isPresserNow, mentality);
       const params = scaleParams(awayParams[i] ?? awayParams[0]!);
-      return clampToPitch(stepMovement(p, ai, params, dt), PITCH.halfLength, PITCH.halfWidth);
+      return clampToPitch(stepOutfieldBody("away", i, p, ai, params, dt), PITCH.halfLength, PITCH.halfWidth);
     });
 
     /** Looks up a player's post-movement body by team + index — everyone's already been moved above. */
@@ -1425,6 +1470,8 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
       else nextStatus = level ? "penalties" : "fulltime";
 
       flushPossession();
+      stamina.current.home = stamina.current.home.map(recoverAtBreak);
+      stamina.current.away = stamina.current.away.map(recoverAtBreak);
       useGameStore.setState({
         matchTime: thisPeriod,
         matchStatus: nextStatus,
