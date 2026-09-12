@@ -65,7 +65,6 @@ import {
 import { playAward, playCard, playCrowdGroan, playCrowdRoar, playKick, playWhistle } from "../../game/logic/audio";
 import { pickTakerIndex, takerPlacement } from "../../game/logic/setpiece";
 import { passAimDirection, selectPassTarget } from "../../game/logic/passing";
-import { GAMEPLAN_REVIEW_SECONDS, matchProgress, planMentality } from "../../game/logic/ai/gameplan";
 import {
   applyStamina,
   FULL_STAMINA,
@@ -111,8 +110,6 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
   // component ever mounts, so a one-time read here (not a subscription) is
   // enough — none of them change mid-match.
   const { homeClubId, awayClubId, netRole, roomCode, difficulty, mentality } = useGameStore.getState();
-  /** A human drives the away side in local 1v1 and online rooms; otherwise it is the AI. */
-  const awayHuman = netRole === "local2p" || netRole === "host" || netRole === "guest";
   const diff = DIFFICULTY_TUNING[difficulty];
 
   // Local 2P reassigns P1 to WASD-only (arrows go to P2); every other mode
@@ -142,9 +139,7 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
   // Rosters + formation roles, computed once — positions are re-derived by
   // the store on every kickoff, but attributes/roles never change mid-match.
   const homeXI = useRef(buildOutfield(homeClub, HOME_DEFEND_SIDE, mentality)).current;
-  // The away side only follows the human's mentality when a human plays it;
-  // as the AI it runs its own game plan (see logic/ai/gameplan.ts).
-  const awayXI = useRef(buildOutfield(awayClub, AWAY_DEFEND_SIDE, awayHuman ? mentality : "balanced")).current;
+  const awayXI = useRef(buildOutfield(awayClub, AWAY_DEFEND_SIDE, mentality)).current;
 
   const homeParams = useRef(homeXI.map((e) => paramsFromAttributes(e.player.attributes))).current;
   const awayParams = useRef(awayXI.map((e) => paramsFromAttributes(e.player.attributes))).current;
@@ -170,7 +165,6 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
     away: awayXI.map(() => FULL_STAMINA),
   });
   const staminaHudAt = useRef(0);
-  const gameplanAt = useRef(0);
 
   /** stepMovement with the sprint economy applied: gates sprint, scales speed, drains/recovers the tank. */
   const stepOutfieldBody = (
@@ -406,18 +400,6 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
       possessionFlushAt.current = state.clock.elapsedTime;
       flushPossession();
     }
-    // --- AI game plan: the away side re-reads the scoreline every few seconds ---
-    if (!awayHuman && state.clock.elapsedTime - gameplanAt.current > GAMEPLAN_REVIEW_SECONDS) {
-      gameplanAt.current = state.clock.elapsedTime;
-      const cur = useGameStore.getState();
-      const want = planMentality(
-        cur.difficulty,
-        cur.score.away - cur.score.home,
-        matchProgress(cur.period, cur.matchTime, MATCH_TUNING.periods, MATCH_TUNING.periodSeconds),
-      );
-      if (want !== cur.aiMentality) useGameStore.setState({ aiMentality: want });
-    }
-    const awayMentality = awayHuman ? mentality : useGameStore.getState().aiMentality;
     if (state.clock.elapsedTime - staminaHudAt.current > 0.25) {
       staminaHudAt.current = state.clock.elapsedTime;
       const cur = useGameStore.getState();
@@ -574,7 +556,7 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
             if (hasAwayHumanNow && i === awayControlledIndex) {
               return clampToPitch(stepOutfieldBody("away", i, p, awayKeysNow, params, dt), PITCH.halfLength, PITCH.halfWidth);
             }
-            const ai = stepOutfield(p, awayXI[i]!.role, refBall, false, awayMentality);
+            const ai = stepOutfield(p, awayXI[i]!.role, refBall, false, mentality);
             return clampToPitch(stepOutfieldBody("away", i, p, ai, params, dt), PITCH.halfLength, PITCH.halfWidth);
           });
 
@@ -1125,7 +1107,7 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
         return clampToPitch(stepOutfieldBody("away", i, p, ai, params, dt), PITCH.halfLength, PITCH.halfWidth);
       }
 
-      const ai = stepOutfield(p, awayXI[i]!.role, store.ball, isPresserNow, awayMentality);
+      const ai = stepOutfield(p, awayXI[i]!.role, store.ball, isPresserNow, mentality);
       const params = scaleParams(awayParams[i] ?? awayParams[0]!);
       return clampToPitch(stepOutfieldBody("away", i, p, ai, params, dt), PITCH.halfLength, PITCH.halfWidth);
     });

@@ -298,8 +298,8 @@ export function MainMenu({
         {mode === "ai" && (
           <Note>
             {MATCH_TUNING.periods} halves · {minutes} minutes · 11 v 11. Hold <b>Space</b> to charge
-            a shot, <b>E</b> to pass, <b>F</b> to slide, <b>Q</b> switches player, <b>C</b> flips
-            the camera.
+            a shot, <b>E</b> to pass (aim with the stick, hold <b>Shift</b> for a through ball),{" "}
+            <b>F</b> to slide, <b>Q</b> switches player, <b>C</b> flips the camera.
           </Note>
         )}
         {mode === "penalties" && (

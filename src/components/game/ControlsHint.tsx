@@ -23,6 +23,8 @@ export function ControlsHint() {
       <Sep />
       <Key>E</Key> pass
       <Sep />
+      <Key>Shift+E</Key> through
+      <Sep />
       <Key>Ctrl</Key> loft
       <Sep />
       <Key>F</Key> slide
