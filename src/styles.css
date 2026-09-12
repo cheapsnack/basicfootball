@@ -142,3 +142,48 @@
     color: var(--color-foreground);
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Goodball UI system — tokens shared by the menu, HUD, post-match and
+ * shootout overlays. Display type is Barlow Condensed; body is Barlow.
+ * ------------------------------------------------------------------------- */
+@layer utilities {
+  .font-display {
+    font-family: "Barlow Condensed", "Arial Narrow", "Helvetica Neue", sans-serif;
+  }
+  .font-body {
+    font-family: Barlow, system-ui, sans-serif;
+  }
+  .gb-panel {
+    background: rgba(12, 14, 18, 0.85);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+  }
+  .gb-panel-solid {
+    background: rgba(12, 14, 18, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 6px;
+  }
+  .gb-stripes {
+    background: repeating-linear-gradient(115deg, #11161b 0 3px, #0d1014 3px 10px);
+  }
+  .gb-banner-in {
+    animation: gb-banner 1.3s ease-out forwards;
+  }
+  .gb-banner-hold {
+    animation: gb-banner-hold 0.22s ease-out forwards;
+  }
+}
+
+@keyframes gb-banner {
+  0% { opacity: 0; transform: translate(-50%, -50%) translateY(14px) scale(0.96); }
+  14% { opacity: 1; transform: translate(-50%, -50%) translateY(0) scale(1); }
+  83% { opacity: 1; transform: translate(-50%, -50%) translateY(0) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) translateY(-10px) scale(0.99); }
+}
+@keyframes gb-banner-hold {
+  0% { opacity: 0; transform: translate(-50%, -50%) translateY(14px) scale(0.96); }
+  100% { opacity: 1; transform: translate(-50%, -50%) translateY(0) scale(1); }
+}
