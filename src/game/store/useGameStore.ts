@@ -155,6 +155,8 @@ type GameState = {
   goals: GoalEvent[];
   /** shots and possession, for the post-match sheet */
   stats: MatchStats;
+  /** controlled players' stamina 0..1, refreshed a few times a second for the HUD */
+  hudStamina: { home: number; away: number };
   /** the dead-ball restart currently being taken, if any */
   restart: Restart | null;
   /**
@@ -277,6 +279,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   lastTouchIndex: null,
   goals: [],
   stats: EMPTY_STATS(),
+  hudStamina: { home: 1, away: 1 },
   bookings: [],
   matchAlert: null,
   showAlert: (alert) => set({ matchAlert: { ...alert, id: Date.now() + Math.random() } }),
@@ -344,6 +347,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       bookings: [],
       goals: [],
       stats: EMPTY_STATS(),
+      hudStamina: { home: 1, away: 1 },
       shootout: initShootout(),
     }),
   setClubs: (homeClubId, awayClubId) => set({ homeClubId, awayClubId }),
@@ -377,6 +381,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       lastTouchIndex: null,
       goals: [],
       stats: EMPTY_STATS(),
+      hudStamina: { home: 1, away: 1 },
       bookings: [],
       matchAlert: null,
       debugSetPiece: null,
