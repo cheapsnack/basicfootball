@@ -1,6 +1,7 @@
-import type { BallState, Kinematics, MovementInput } from "../../types";
+import type { Attributes, BallState, Kinematics, MovementInput } from "../../types";
 import { BALL_RADIUS } from "../ballPhysics";
 import { FIELD, goalLineX } from "../field";
+import { attrSigned } from "../attributes";
 
 /**
  * Goalkeeper feel. Every number the keeper uses lives here — nothing in the
@@ -44,6 +45,37 @@ export const KEEPER_TUNING = {
   /** seconds the keeper is beaten for after making a save */
   saveRecovery: 0.8,
 } as const;
+
+/**
+ * How `gk` bends the keeper: better keepers read the shot earlier (longer
+ * dive lead), reach further, and dive faster. A neutral-rated keeper (attributes.ts, ≈92 — every starting keeper
+ * is rated 87+) is exactly KEEPER_TUNING.
+ */
+export const KEEPER_ATTR_TUNING = {
+  /** ± seconds of dive lead time across 1..99 */
+  leadTimeRange: 0.22,
+  /** ± metres of save radius across 1..99 */
+  saveRadiusRange: 0.28,
+  /** ± m/s of dive speed across 1..99 */
+  diveSpeedRange: 2.2,
+} as const;
+
+export type KeeperParams = { diveLeadTime: number; saveRadius: number; diveSpeed: number };
+
+export const NEUTRAL_KEEPER_PARAMS: KeeperParams = {
+  diveLeadTime: KEEPER_TUNING.diveLeadTime,
+  saveRadius: KEEPER_TUNING.saveRadius,
+  diveSpeed: KEEPER_TUNING.diveSpeed,
+};
+
+export function keeperParamsFromAttributes(a: Pick<Attributes, "gk">): KeeperParams {
+  const g = attrSigned("gk", a.gk);
+  return {
+    diveLeadTime: KEEPER_TUNING.diveLeadTime + g * KEEPER_ATTR_TUNING.leadTimeRange,
+    saveRadius: KEEPER_TUNING.saveRadius + g * KEEPER_ATTR_TUNING.saveRadiusRange,
+    diveSpeed: KEEPER_TUNING.diveSpeed + g * KEEPER_ATTR_TUNING.diveSpeedRange,
+  };
+}
 
 export type KeeperPhase = "idle" | "tracking" | "diving" | "recovering";
 
@@ -116,6 +148,7 @@ export function stepGoalkeeper(
   ball: BallState,
   side: 1 | -1,
   dt: number,
+  params: KeeperParams = NEUTRAL_KEEPER_PARAMS,
 ): KeeperDecision {
   const t = KEEPER_TUNING;
   const lineX = goalLineX(side);
@@ -128,8 +161,8 @@ export function stepGoalkeeper(
         state: { ...state, timer },
         input: { x: 0, z: 0, sprint: false },
         diveVelocity: {
-          x: -side * t.diveSpeed * t.diveForwardRatio,
-          z: state.diveDir * t.diveSpeed,
+          x: -side * params.diveSpeed * t.diveForwardRatio,
+          z: state.diveDir * params.diveSpeed,
         },
       };
     }
@@ -148,7 +181,7 @@ export function stepGoalkeeper(
         diveVelocity: null,
       };
     }
-    return stepGoalkeeper(keeper, { phase: "tracking", timer: 0, diveDir: 0 }, ball, side, dt);
+    return stepGoalkeeper(keeper, { phase: "tracking", timer: 0, diveDir: 0 }, ball, side, dt, params);
   }
 
   // --- should we dive? ---
@@ -156,7 +189,7 @@ export function stepGoalkeeper(
   const ballSpeed = Math.hypot(ball.velocity.x, ball.velocity.z);
   if (
     cross &&
-    cross.time <= t.diveLeadTime &&
+    cross.time <= params.diveLeadTime &&
     ballSpeed >= t.diveMinSpeed &&
     Math.abs(cross.z) <= t.maxLateral &&
     cross.y <= t.maxReachHeight &&
@@ -167,8 +200,8 @@ export function stepGoalkeeper(
       state: { phase: "diving", timer: t.diveDuration, diveDir: dir },
       input: { x: 0, z: 0, sprint: false },
       diveVelocity: {
-        x: -side * t.diveSpeed * t.diveForwardRatio,
-        z: dir * t.diveSpeed,
+        x: -side * params.diveSpeed * t.diveForwardRatio,
+        z: dir * params.diveSpeed,
       },
     };
   }
@@ -221,12 +254,12 @@ export function tryKeeperSave(
   keeper: Kinematics,
   state: KeeperState,
   side: 1 | -1,
+  params: KeeperParams = NEUTRAL_KEEPER_PARAMS,
 ): BallState | null {
   if (state.phase === "recovering") return null;
   if (ball.position.y > KEEPER_TUNING.maxReachHeight) return null;
 
-  const reach =
-    KEEPER_TUNING.saveRadius + (state.phase === "diving" ? KEEPER_TUNING.diveSaveBonus : 0);
+  const reach = params.saveRadius + (state.phase === "diving" ? KEEPER_TUNING.diveSaveBonus : 0);
   const dx = ball.position.x - keeper.position.x;
   const dz = ball.position.z - keeper.position.z;
   if (Math.hypot(dx, dz) > reach) return null;
@@ -280,8 +313,9 @@ export function tryKeeperClaim(
   keeper: Kinematics,
   state: KeeperState,
   side: 1 | -1,
+  params: KeeperParams = NEUTRAL_KEEPER_PARAMS,
 ): KeeperClaim | null {
-  const parried = tryKeeperSave(ball, keeper, state, side);
+  const parried = tryKeeperSave(ball, keeper, state, side, params);
   if (!parried) return null;
 
   const speed = Math.hypot(ball.velocity.x, ball.velocity.z);
