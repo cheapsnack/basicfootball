@@ -157,6 +157,8 @@ type GameState = {
   stats: MatchStats;
   /** controlled players' stamina 0..1, refreshed a few times a second for the HUD */
   hudStamina: { home: number; away: number };
+  /** the AI's current game plan for the away side (see logic/ai/gameplan.ts) */
+  aiMentality: Mentality;
   /** the dead-ball restart currently being taken, if any */
   restart: Restart | null;
   /**
@@ -280,6 +282,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   goals: [],
   stats: EMPTY_STATS(),
   hudStamina: { home: 1, away: 1 },
+  aiMentality: "balanced",
   bookings: [],
   matchAlert: null,
   showAlert: (alert) => set({ matchAlert: { ...alert, id: Date.now() + Math.random() } }),
@@ -348,6 +351,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       goals: [],
       stats: EMPTY_STATS(),
       hudStamina: { home: 1, away: 1 },
+      aiMentality: "balanced",
       shootout: initShootout(),
     }),
   setClubs: (homeClubId, awayClubId) => set({ homeClubId, awayClubId }),
@@ -382,6 +386,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       goals: [],
       stats: EMPTY_STATS(),
       hudStamina: { home: 1, away: 1 },
+      aiMentality: "balanced",
       bookings: [],
       matchAlert: null,
       debugSetPiece: null,
