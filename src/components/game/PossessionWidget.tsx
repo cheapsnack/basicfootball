@@ -1,5 +1,6 @@
 import { useGameStore } from "../../game/store/useGameStore";
 import { getClub } from "../../game/data/clubs";
+import { MENTALITY_LABEL } from "../../game/logic/ai/mentality";
 
 /**
  * Bottom-right possession split + shot count. Reads the coarse `stats`
@@ -11,6 +12,7 @@ export function PossessionWidget() {
   const netRole = useGameStore((s) => s.netRole);
   const homeClub = useGameStore((s) => getClub(s.homeClubId));
   const awayClub = useGameStore((s) => getClub(s.awayClubId));
+  const aiMentality = useGameStore((s) => s.aiMentality);
 
   const total = stats.possessionSeconds.home + stats.possessionSeconds.away;
   const home = total > 0 ? Math.round((stats.possessionSeconds.home / total) * 100) : 50;
@@ -34,6 +36,23 @@ export function PossessionWidget() {
         <div style={{ width: `${home}%`, background: homeClub.primaryColor }} />
         <div style={{ width: `${100 - home}%`, background: awayClub.primaryColor }} />
       </div>
+      {!lifted && (
+        <div className="flex justify-between font-mono text-[11px] tracking-[0.16em] text-[#9aa4af]">
+          <span>AI PLAN</span>
+          <span
+            style={{
+              color:
+                aiMentality === "attacking"
+                  ? "#e2444a"
+                  : aiMentality === "defensive"
+                    ? "#63d68a"
+                    : "#e8ecf0",
+            }}
+          >
+            {MENTALITY_LABEL[aiMentality].toUpperCase()}
+          </span>
+        </div>
+      )}
       <div className="flex justify-between font-mono text-[11px] tracking-[0.16em] text-[#9aa4af]">
         <span>SHOTS</span>
         <span className="text-[#e8ecf0]">

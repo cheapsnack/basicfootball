@@ -64,6 +64,8 @@ import {
 } from "../../game/logic/restarts";
 import { playAward, playCard, playCrowdGroan, playCrowdRoar, playKick, playWhistle } from "../../game/logic/audio";
 import { pickTakerIndex, takerPlacement } from "../../game/logic/setpiece";
+import { passAimDirection, selectPassTarget } from "../../game/logic/passing";
+import { GAMEPLAN_REVIEW_SECONDS, matchProgress, planMentality } from "../../game/logic/ai/gameplan";
 import {
   applyStamina,
   FULL_STAMINA,
@@ -109,6 +111,8 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
   // component ever mounts, so a one-time read here (not a subscription) is
   // enough — none of them change mid-match.
   const { homeClubId, awayClubId, netRole, roomCode, difficulty, mentality } = useGameStore.getState();
+  /** A human drives the away side in local 1v1 and online rooms; otherwise it is the AI. */
+  const awayHuman = netRole === "local2p" || netRole === "host" || netRole === "guest";
   const diff = DIFFICULTY_TUNING[difficulty];
 
   // Local 2P reassigns P1 to WASD-only (arrows go to P2); every other mode
@@ -138,7 +142,9 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
   // Rosters + formation roles, computed once — positions are re-derived by
   // the store on every kickoff, but attributes/roles never change mid-match.
   const homeXI = useRef(buildOutfield(homeClub, HOME_DEFEND_SIDE, mentality)).current;
-  const awayXI = useRef(buildOutfield(awayClub, AWAY_DEFEND_SIDE, mentality)).current;
+  // The away side only follows the human's mentality when a human plays it;
+  // as the AI it runs its own game plan (see logic/ai/gameplan.ts).
+  const awayXI = useRef(buildOutfield(awayClub, AWAY_DEFEND_SIDE, awayHuman ? mentality : "balanced")).current;
 
   const homeParams = useRef(homeXI.map((e) => paramsFromAttributes(e.player.attributes))).current;
   const awayParams = useRef(awayXI.map((e) => paramsFromAttributes(e.player.attributes))).current;
@@ -164,6 +170,7 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
     away: awayXI.map(() => FULL_STAMINA),
   });
   const staminaHudAt = useRef(0);
+  const gameplanAt = useRef(0);
 
   /** stepMovement with the sprint economy applied: gates sprint, scales speed, drains/recovers the tank. */
   const stepOutfieldBody = (
@@ -399,6 +406,18 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
       possessionFlushAt.current = state.clock.elapsedTime;
       flushPossession();
     }
+    // --- AI game plan: the away side re-reads the scoreline every few seconds ---
+    if (!awayHuman && state.clock.elapsedTime - gameplanAt.current > GAMEPLAN_REVIEW_SECONDS) {
+      gameplanAt.current = state.clock.elapsedTime;
+      const cur = useGameStore.getState();
+      const want = planMentality(
+        cur.difficulty,
+        cur.score.away - cur.score.home,
+        matchProgress(cur.period, cur.matchTime, MATCH_TUNING.periods, MATCH_TUNING.periodSeconds),
+      );
+      if (want !== cur.aiMentality) useGameStore.setState({ aiMentality: want });
+    }
+    const awayMentality = awayHuman ? mentality : useGameStore.getState().aiMentality;
     if (state.clock.elapsedTime - staminaHudAt.current > 0.25) {
       staminaHudAt.current = state.clock.elapsedTime;
       const cur = useGameStore.getState();
@@ -555,7 +574,7 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
             if (hasAwayHumanNow && i === awayControlledIndex) {
               return clampToPitch(stepOutfieldBody("away", i, p, awayKeysNow, params, dt), PITCH.halfLength, PITCH.halfWidth);
             }
-            const ai = stepOutfield(p, awayXI[i]!.role, refBall, false, mentality);
+            const ai = stepOutfield(p, awayXI[i]!.role, refBall, false, awayMentality);
             return clampToPitch(stepOutfieldBody("away", i, p, ai, params, dt), PITCH.halfLength, PITCH.halfWidth);
           });
 
@@ -848,17 +867,30 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
       // teammate in the facing cone so passes feel responsive even with imprecise aim.
       let strikeTarget: { x: number; z: number } | undefined;
       let receiverIndex: number | null = null;
+      let passPower = 1;
       if (prevCharge.action === "shoot") {
         strikeTarget = { x: -HOME_DEFEND_SIDE * PITCH.halfLength, z: 0 };
       } else if (prevCharge.action === "pass") {
-        const receiver = nearestTeammateInCone(controlled, store.homeOutfield, controlledIndex);
-        if (receiver) {
-          strikeTarget = { x: receiver.x, z: receiver.z };
-          receiverIndex = receiver.index;
+        // Sprint held on release = through ball into space.
+        const choice = selectPassTarget(
+          controlled,
+          passAimDirection(controlled, keys),
+          store.homeOutfield,
+          controlledIndex,
+          store.awayOutfield,
+          (-HOME_DEFEND_SIDE) as 1 | -1,
+          keys.sprint ? "through" : "pass",
+          sentHome,
+          PITCH,
+        );
+        if (choice) {
+          strikeTarget = choice.aim;
+          receiverIndex = choice.index;
+          passPower = choice.powerMult;
         }
       }
       const strike = resolveStrike(controlled, prevCharge, strikeTarget, homeStrike[controlledIndex]);
-      ball = applyImpulse(ball, strike.direction, strike.speed, strike.lift);
+      ball = applyImpulse(ball, strike.direction, strike.speed * passPower, strike.lift * passPower);
       cooldown = STRIKE_TUNING.cooldown;
       lastTouch = "home";
       lastTouchIndex = controlledIndex;
@@ -889,13 +921,26 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
     ) {
       let awayStrikeTarget: { x: number; z: number } | undefined;
       let awayReceiverIndex: number | null = null;
+      let awayPassPower = 1;
       if (prevAwayCharge.action === "shoot") {
         awayStrikeTarget = { x: -AWAY_DEFEND_SIDE * PITCH.halfLength, z: 0 };
       } else if (prevAwayCharge.action === "pass") {
-        const receiver = nearestTeammateInCone(awayControlled, store.awayOutfield, awayControlledIndex ?? 0);
-        if (receiver) {
-          awayStrikeTarget = { x: receiver.x, z: receiver.z };
-          awayReceiverIndex = receiver.index;
+        const awayKeysAtRelease = netRole === "host" ? guestInputRef.current : input2.current;
+        const choice = selectPassTarget(
+          awayControlled,
+          passAimDirection(awayControlled, awayKeysAtRelease),
+          store.awayOutfield,
+          awayControlledIndex ?? 0,
+          store.homeOutfield,
+          (-AWAY_DEFEND_SIDE) as 1 | -1,
+          awayKeysAtRelease.sprint ? "through" : "pass",
+          sentAway,
+          PITCH,
+        );
+        if (choice) {
+          awayStrikeTarget = choice.aim;
+          awayReceiverIndex = choice.index;
+          awayPassPower = choice.powerMult;
         }
       }
       const strike = resolveStrike(
@@ -904,7 +949,7 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
         awayStrikeTarget,
         awayControlledIndex === null ? undefined : awayStrike[awayControlledIndex],
       );
-      ball = applyImpulse(ball, strike.direction, strike.speed, strike.lift);
+      ball = applyImpulse(ball, strike.direction, strike.speed * awayPassPower, strike.lift * awayPassPower);
       awayCooldown = STRIKE_TUNING.cooldown;
       lastTouch = "away";
       lastTouchIndex = awayControlledIndex;
@@ -1080,7 +1125,7 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
         return clampToPitch(stepOutfieldBody("away", i, p, ai, params, dt), PITCH.halfLength, PITCH.halfWidth);
       }
 
-      const ai = stepOutfield(p, awayXI[i]!.role, store.ball, isPresserNow, mentality);
+      const ai = stepOutfield(p, awayXI[i]!.role, store.ball, isPresserNow, awayMentality);
       const params = scaleParams(awayParams[i] ?? awayParams[0]!);
       return clampToPitch(stepOutfieldBody("away", i, p, ai, params, dt), PITCH.halfLength, PITCH.halfWidth);
     });
@@ -1571,34 +1616,6 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
  * assist (the ball curves toward a real receiver) and for handing control to
  * that receiver after the pass.
  */
-function nearestTeammateInCone(
-  passer: Kinematics,
-  teammates: Kinematics[],
-  selfIndex: number,
-): { index: number; x: number; z: number } | undefined {
-  const facingX = Math.sin(passer.heading);
-  const facingZ = -Math.cos(passer.heading);
-  const minAlignment = 0.15; // cos(~81°) — generous forward half
-  let best: { index: number; x: number; z: number } | undefined;
-  let bestDist = Infinity;
-
-  teammates.forEach((t, i) => {
-    if (i === selfIndex) return;
-    const dx = t.position.x - passer.position.x;
-    const dz = t.position.z - passer.position.z;
-    const dist = Math.hypot(dx, dz);
-    if (dist < 1) return; // skip players on top of each other
-    const alignment = (dx * facingX + dz * facingZ) / dist;
-    if (alignment < minAlignment) return; // behind the passer
-    if (dist < bestDist) {
-      bestDist = dist;
-      best = { index: i, x: t.position.x, z: t.position.z };
-    }
-  });
-  return best;
-}
-
-
 /**
  * Shared goalkeeper drive step for either side.
  */
