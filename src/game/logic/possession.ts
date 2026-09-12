@@ -1,5 +1,6 @@
-import type { BallState, Kinematics } from "../types";
+import type { Attributes, BallState, Kinematics } from "../types";
 import type { TeamSide } from "./match";
+import { attrSigned } from "./attributes";
 
 export type Possession = { team: TeamSide; index: number };
 
@@ -44,7 +45,34 @@ export function possessionBallPosition(
   };
 }
 
-export type CaptureCandidate = { team: TeamSide; index: number; body: Kinematics };
+export type CaptureCandidate = {
+  team: TeamSide;
+  index: number;
+  body: Kinematics;
+  /** per-player steal reach (m); defaults to POSSESSION_TUNING.stealRadius */
+  reach?: number | undefined;
+};
+
+/**
+ * How `defend` and `dribble` bend a steal: strong defenders reach a little
+ * further, close-control dribblers shield the ball a little better. Both
+ * are neutral at the roster median (attributes.ts).
+ */
+export const POSSESSION_ATTR_TUNING = {
+  /** ± fraction of stealRadius across defend 1..99 */
+  stealReachRange: 0.2,
+  /** ∓ fraction applied to every opponent's reach across dribble 1..99 */
+  shieldRange: 0.15,
+} as const;
+
+export function stealReachFromAttributes(a: Pick<Attributes, "defend">): number {
+  return POSSESSION_TUNING.stealRadius * (1 + attrSigned("defend", a.defend) * POSSESSION_ATTR_TUNING.stealReachRange);
+}
+
+/** Multiplier applied to opponents' steal reach while this player carries. */
+export function shieldFromAttributes(a: Pick<Attributes, "dribble">): number {
+  return 1 - attrSigned("dribble", a.dribble) * POSSESSION_ATTR_TUNING.shieldRange;
+}
 
 /**
  * Finds whoever is closest to a loose ball within capture range, if anyone —
@@ -75,16 +103,20 @@ export function tryCapture(ball: BallState, candidates: CaptureCandidate[]): Pos
 export function trySteal(
   carrier: Kinematics,
   opponents: CaptureCandidate[],
+  carrierShield = 1,
 ): Possession | null {
   let best: Possession | null = null;
-  let bestDist: number = POSSESSION_TUNING.stealRadius;
+  // Closest opponent inside their own reach wins; ties go to the smaller gap.
+  let bestMargin = 0;
   for (const o of opponents) {
     const dist = Math.hypot(
       carrier.position.x - o.body.position.x,
       carrier.position.z - o.body.position.z,
     );
-    if (dist < bestDist) {
-      bestDist = dist;
+    const reach = (o.reach ?? POSSESSION_TUNING.stealRadius) * carrierShield;
+    const margin = reach - dist;
+    if (margin > 0 && (best === null || margin > bestMargin)) {
+      bestMargin = margin;
       best = { team: o.team, index: o.index };
     }
   }

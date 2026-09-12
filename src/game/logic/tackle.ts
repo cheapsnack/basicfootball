@@ -1,4 +1,5 @@
-import type { BallState, Kinematics } from "../types";
+import type { Attributes, BallState, Kinematics } from "../types";
+import { attrSigned } from "./attributes";
 
 /**
  * Slide-tackle feel. A tackle is a short committed dash rather than a held
@@ -33,6 +34,33 @@ export const TACKLE_TUNING = {
 } as const;
 
 /**
+ * How `defend` bends a tackle: better defenders reach further for the ball
+ * and need to be closer to a body before it counts as a foul. A neutral-rated
+ * player (attributes.ts) gets exactly TACKLE_TUNING.
+ */
+export const TACKLE_ATTR_TUNING = {
+  /** ± metres of reach across 1..99 */
+  reachRange: 0.3,
+  /** ∓ metres of foul radius across 1..99 (99 → smaller, cleaner) */
+  foulRadiusRange: 0.45,
+} as const;
+
+export type TackleParams = { reach: number; foulRadius: number };
+
+export const NEUTRAL_TACKLE_PARAMS: TackleParams = {
+  reach: TACKLE_TUNING.reach,
+  foulRadius: TACKLE_TUNING.foulRadius,
+};
+
+export function tackleParamsFromAttributes(a: Pick<Attributes, "defend">): TackleParams {
+  const d = attrSigned("defend", a.defend);
+  return {
+    reach: TACKLE_TUNING.reach + d * TACKLE_ATTR_TUNING.reachRange,
+    foulRadius: TACKLE_TUNING.foulRadius - d * TACKLE_ATTR_TUNING.foulRadiusRange,
+  };
+}
+
+/**
  * If the ball is within tackle reach of `tacklerPos`, knocks it loose away
  * from the tackler at TACKLE_TUNING.impulseSpeed. Returns null when out of
  * reach — nothing to do. Pure.
@@ -40,11 +68,12 @@ export const TACKLE_TUNING = {
 export function attemptTackleImpulse(
   ball: BallState,
   tacklerPos: { x: number; z: number },
+  params: TackleParams = NEUTRAL_TACKLE_PARAMS,
 ): BallState | null {
   const dx = ball.position.x - tacklerPos.x;
   const dz = ball.position.z - tacklerPos.z;
   const dist = Math.hypot(dx, dz);
-  if (dist >= TACKLE_TUNING.reach) return null;
+  if (dist >= params.reach) return null;
 
   const nx = dist < 1e-3 ? 0 : dx / dist;
   const nz = dist < 1e-3 ? 1 : dz / dist;
@@ -62,9 +91,10 @@ export function attemptTackleImpulse(
 export function detectFoulOnOpponent(
   tacklerPos: { x: number; z: number },
   opponents: Kinematics[],
+  params: TackleParams = NEUTRAL_TACKLE_PARAMS,
 ): number | null {
   let best = -1;
-  let bestDist: number = TACKLE_TUNING.foulRadius;
+  let bestDist: number = params.foulRadius;
   opponents.forEach((o, i) => {
     const dist = Math.hypot(o.position.x - tacklerPos.x, o.position.z - tacklerPos.z);
     if (dist < bestDist) {
