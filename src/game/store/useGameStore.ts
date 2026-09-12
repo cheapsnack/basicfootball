@@ -8,7 +8,7 @@ import { initialKeeperState, keeperHome, type KeeperState } from "../logic/ai/go
 import { buildOutfield, defaultControlledIndex } from "../logic/ai/outfield";
 import { DEFAULT_DIFFICULTY, type Difficulty } from "../logic/ai/difficulty";
 import { DEFAULT_MENTALITY, type Mentality } from "../logic/ai/mentality";
-import { MATCH_TUNING, type MatchStatus, type Score, type TeamSide } from "../logic/match";
+import { displayClock, MATCH_TUNING, type MatchStatus, type Score, type TeamSide } from "../logic/match";
 import { DEFAULT_AWAY_CLUB_ID, DEFAULT_HOME_CLUB_ID, getClub } from "../data/clubs";
 import type { Restart } from "../logic/restarts";
 import type { Possession } from "../logic/possession";
@@ -24,6 +24,21 @@ export type MatchAlert = {
   /** accent colour for the flash border */
   accent: string;
 };
+
+/** One goal, for the post-match sheet. `scorerIndex` is the outfield index on
+ * the scoring side, or null when the keeper scored / it was an own goal. */
+export type GoalEvent = { team: TeamSide; scorerIndex: number | null; minute: number };
+
+/** Coarse match stats — written by the frame loop only at goal/period ends. */
+export type MatchStats = {
+  shots: { home: number; away: number };
+  possessionSeconds: { home: number; away: number };
+};
+
+const EMPTY_STATS = (): MatchStats => ({
+  shots: { home: 0, away: 0 },
+  possessionSeconds: { home: 0, away: 0 },
+});
 
 /** Set-piece placement snapshot used only by the debug overlay. */
 export type SetPieceDebug = {
@@ -134,6 +149,12 @@ type GameState = {
   lastScorer: TeamSide | null;
   /** which team last made contact with the ball — decides throw-in/corner/goal-kick awards */
   lastTouch: TeamSide;
+  /** outfield index of the last toucher on `lastTouch`'s side, null for keepers */
+  lastTouchIndex: number | null;
+  /** every goal this match, in order */
+  goals: GoalEvent[];
+  /** shots and possession, for the post-match sheet */
+  stats: MatchStats;
   /** the dead-ball restart currently being taken, if any */
   restart: Restart | null;
   /**
@@ -189,7 +210,11 @@ type GameState = {
 
   setMatchStatus: (status: MatchStatus, statusTimer?: number) => void;
   setMatchTime: (matchTime: number) => void;
-  recordGoal: (scorer: TeamSide) => void;
+  recordGoal: (scorer: TeamSide, scorerIndex?: number | null) => void;
+  /** Counts a shot for the post-match sheet. */
+  recordShot: (team: TeamSide) => void;
+  /** Adds accumulated possession time (called at goal/period ends, not per frame). */
+  addPossessionTime: (home: number, away: number) => void;
   /** Replaces the penalty shootout state (used by the shootout overlay). */
   setShootout: (shootout: ShootoutState) => void;
   /** Sets the shootout-only difficulty. */
@@ -249,6 +274,9 @@ export const useGameStore = create<GameState>((set, get) => ({
   statusTimer: MATCH_TUNING.kickoffPause,
   lastScorer: null,
   lastTouch: "home",
+  lastTouchIndex: null,
+  goals: [],
+  stats: EMPTY_STATS(),
   bookings: [],
   matchAlert: null,
   showAlert: (alert) => set({ matchAlert: { ...alert, id: Date.now() + Math.random() } }),
@@ -275,12 +303,34 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   setMatchStatus: (matchStatus, statusTimer = 0) => set({ matchStatus, statusTimer }),
   setMatchTime: (matchTime) => set({ matchTime }),
-  recordGoal: (scorer) =>
+  recordGoal: (scorer, scorerIndex = null) =>
     set((s) => ({
       score: { ...s.score, [scorer]: s.score[scorer] + 1 },
       matchStatus: "goal",
       statusTimer: MATCH_TUNING.goalCelebration,
       lastScorer: scorer,
+      goals: [
+        ...s.goals,
+        {
+          team: scorer,
+          scorerIndex,
+          minute: Math.max(1, Math.ceil(displayClock(s.period, s.matchTime) / 60)),
+        },
+      ],
+    })),
+  recordShot: (team) =>
+    set((s) => ({
+      stats: { ...s.stats, shots: { ...s.stats.shots, [team]: s.stats.shots[team] + 1 } },
+    })),
+  addPossessionTime: (home, away) =>
+    set((s) => ({
+      stats: {
+        ...s.stats,
+        possessionSeconds: {
+          home: s.stats.possessionSeconds.home + home,
+          away: s.stats.possessionSeconds.away + away,
+        },
+      },
     })),
   setShootout: (shootout) => set({ shootout }),
   setPenaltyLevel: (penaltyLevel) => set({ penaltyLevel }),
@@ -292,6 +342,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       matchStatus: "penalties",
       statusTimer: 0,
       bookings: [],
+      goals: [],
+      stats: EMPTY_STATS(),
       shootout: initShootout(),
     }),
   setClubs: (homeClubId, awayClubId) => set({ homeClubId, awayClubId }),
@@ -322,6 +374,9 @@ export const useGameStore = create<GameState>((set, get) => ({
       statusTimer: MATCH_TUNING.kickoffPause,
       lastScorer: null,
       lastTouch: "home",
+      lastTouchIndex: null,
+      goals: [],
+      stats: EMPTY_STATS(),
       bookings: [],
       matchAlert: null,
       debugSetPiece: null,
