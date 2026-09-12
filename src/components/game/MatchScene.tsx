@@ -307,8 +307,26 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
     }
   };
 
+  /** Possession seconds accumulated since the last flush — flushed to the
+   * store only at goals and period ends so it never re-renders per frame. */
+  const possessionClock = useRef({ home: 0, away: 0 });
+  const flushPossession = () => {
+    const c = possessionClock.current;
+    if (c.home === 0 && c.away === 0) return;
+    useGameStore.getState().addPossessionTime(c.home, c.away);
+    c.home = 0;
+    c.away = 0;
+  };
+
+  const possessionFlushAt = useRef(0);
+
   useFrame((state, rawDelta) => {
     const dt = Math.min(rawDelta, 0.05);
+    // Coarse possession stats for the HUD — one store write every 2 s.
+    if (state.clock.elapsedTime - possessionFlushAt.current > 2) {
+      possessionFlushAt.current = state.clock.elapsedTime;
+      flushPossession();
+    }
     const store = useGameStore.getState();
     // Options overlay open — freeze the entire simulation (and the camera).
     if (store.paused) return;
@@ -723,6 +741,7 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
     let cooldown = Math.max(0, store.strikeCooldown - dt);
     let awayCooldown = Math.max(0, store.awayStrikeCooldown - dt);
     let lastTouch: TeamSide = store.lastTouch;
+    let lastTouchIndex: number | null = store.lastTouchIndex;
     // While set, only this team may touch (and therefore strike) the ball —
     // see the dead-ball restart placement above for why.
     let restartLock: TeamSide | null = store.restartLock;
@@ -760,6 +779,8 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
       ball = applyImpulse(ball, strike.direction, strike.speed, strike.lift);
       cooldown = STRIKE_TUNING.cooldown;
       lastTouch = "home";
+      lastTouchIndex = controlledIndex;
+      if (prevCharge.action === "shoot") useGameStore.getState().recordShot("home");
       restartLock = null;
       possession = null;
       recentRelease.current = {
@@ -799,6 +820,8 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
       ball = applyImpulse(ball, strike.direction, strike.speed, strike.lift);
       awayCooldown = STRIKE_TUNING.cooldown;
       lastTouch = "away";
+      lastTouchIndex = awayControlledIndex;
+      if (prevAwayCharge.action === "shoot") useGameStore.getState().recordShot("away");
       restartLock = null;
       possession = null;
       recentRelease.current = {
@@ -837,6 +860,8 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
             const dir = shotState.windupDir ?? aiShotDirection(p, homeGoalX, diff.shotAccuracy);
             ball = applyImpulse(ball, dir, diff.shotPower, 0.12);
             lastTouch = "home";
+            lastTouchIndex = i;
+            useGameStore.getState().recordShot("home");
             restartLock = null;
             possession = null;
             recentRelease.current = { team: "home", index: i, until: state.clock.elapsedTime + STRIKE_TUNING.cooldown };
@@ -909,6 +934,8 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
             const dir = shotState.windupDir ?? aiShotDirection(p, awayGoalX, diff.shotAccuracy);
             ball = applyImpulse(ball, dir, diff.shotPower, 0.12);
             lastTouch = "away";
+            lastTouchIndex = i;
+            useGameStore.getState().recordShot("away");
             restartLock = null;
             possession = null;
             recentRelease.current = { team: "away", index: i, until: state.clock.elapsedTime + STRIKE_TUNING.cooldown };
@@ -1034,6 +1061,7 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
       if (knocked) {
         ball = knocked;
         lastTouch = "home";
+        lastTouchIndex = controlledIndex;
         restartLock = null;
         possession = null;
         recentRelease.current = {
@@ -1062,6 +1090,7 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
       if (knocked) {
         ball = knocked;
         lastTouch = "away";
+        lastTouchIndex = awayControlledIndex;
         restartLock = null;
         possession = null;
         recentRelease.current = {
@@ -1118,6 +1147,7 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
         if (stolen) {
           possession = stolen;
           lastTouch = stolen.team;
+          lastTouchIndex = stolen.index;
           restartLock = null;
           // Give the stealer the ball at their own feet immediately.
           const newPossessor = bodyOf(stolen.team, stolen.index);
@@ -1144,6 +1174,8 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
           spin: ball.spin,
         };
         lastTouch = possession.team;
+        lastTouchIndex = possession.index;
+        possessionClock.current[possession.team] += dt;
       }
     }
 
@@ -1168,6 +1200,7 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
           spin: ball.spin,
         };
         lastTouch = holder.team;
+        lastTouchIndex = null;
       } else {
         ball = {
           position: { x: gk.position.x, y: KEEPER_HANDS.holdHeight, z: gk.position.z },
@@ -1176,6 +1209,7 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
           spin: ball.spin,
         };
         lastTouch = holder.team;
+        lastTouchIndex = null;
       }
     } else if (!possession) {
       ball = stepBall(ball, dt, { halfLength: PITCH.halfLength, halfWidth: PITCH.halfWidth });
@@ -1262,11 +1296,13 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
         awayStrikeCooldown: awayCooldown,
         matchTime,
         lastTouch,
+        lastTouchIndex,
         restartLock: null,
         possession: null,
         bookings,
       });
-      useGameStore.getState().recordGoal(goal.scorer);
+      useGameStore.getState().recordGoal(goal.scorer, lastTouch === goal.scorer ? lastTouchIndex : null);
+      flushPossession();
       playWhistle();
       if (goal.scorer === "home") playCrowdRoar();
       else playCrowdGroan();
@@ -1290,6 +1326,7 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
         awayStrikeCooldown: awayCooldown,
         matchTime,
         lastTouch,
+        lastTouchIndex,
         restart: outOfBounds,
         restartLock: null,
         possession: null,
@@ -1322,6 +1359,7 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
       else if (store.period < TOTAL_PERIODS) nextStatus = "halftime";
       else nextStatus = level ? "penalties" : "fulltime";
 
+      flushPossession();
       useGameStore.setState({
         matchTime: thisPeriod,
         matchStatus: nextStatus,
@@ -1347,6 +1385,7 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
       awayCharge,
       awayStrikeCooldown: awayCooldown,
       lastTouch,
+      lastTouchIndex,
       restartLock,
       possession,
       bookings,

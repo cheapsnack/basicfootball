@@ -10,6 +10,7 @@ import { MatchAlert } from "./MatchAlert";
 import { LineupIndicator } from "./LineupIndicator";
 import { SetPieceDebugOverlay } from "./SetPieceDebugOverlay";
 import { PlayerNamesPanel } from "./PlayerNamesPanel";
+import { PossessionWidget } from "./PossessionWidget";
 import { SoundToggle } from "./SoundToggle";
 import { PenaltyShootout } from "./PenaltyShootout";
 import { MobileControls } from "./MobileControls";
@@ -68,6 +69,7 @@ export function GameCanvas({ onExit }: { onExit?: (() => void) | undefined }) {
       {!inShootout && <LineupIndicator />}
       {!inShootout && <SetPieceDebugOverlay />}
       {!inShootout && <PlayerNamesPanel />}
+      {!inShootout && <PossessionWidget />}
       <SoundToggle />
       <PowerBar />
       <ControlsHint />

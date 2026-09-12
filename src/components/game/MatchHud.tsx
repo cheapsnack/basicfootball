@@ -1,24 +1,25 @@
 import { useState } from "react";
 import { useGameStore } from "../../game/store/useGameStore";
 import { displayClock, formatClock, MATCH_TUNING, periodLabel } from "../../game/logic/match";
-import type { Booking } from "../../game/logic/bookings";
 import { getClub } from "../../game/data/clubs";
 import type { Club } from "../../game/types";
 import { ExitConfirm } from "./ExitConfirm";
+import { PostMatch } from "./PostMatch";
+
+const ACCENT = "#63d68a";
 
 /** Pick black or white text for legibility on a club colour. */
-function textOn(hex: string): string {
+export function textOn(hex: string): string {
   const c = hex.replace("#", "");
   if (c.length !== 6) return "#ffffff";
   const r = parseInt(c.slice(0, 2), 16);
   const g = parseInt(c.slice(2, 4), 16);
   const b = parseInt(c.slice(4, 6), 16);
   const luma = 0.299 * r + 0.587 * g + 0.114 * b;
-  return luma > 160 ? "#101418" : "#ffffff";
+  return luma > 160 ? "#0a0c0f" : "#ffffff";
 }
 
 export function MatchHud({ onExit }: { onExit?: (() => void) | undefined }) {
-  const resetMatch = useGameStore((s) => s.resetMatch);
   const score = useGameStore((s) => s.score);
   const matchTime = useGameStore((s) => s.matchTime);
   const period = useGameStore((s) => s.period);
@@ -26,6 +27,7 @@ export function MatchHud({ onExit }: { onExit?: (() => void) | undefined }) {
   const lastScorer = useGameStore((s) => s.lastScorer);
   const netRole = useGameStore((s) => s.netRole);
   const bookings = useGameStore((s) => s.bookings);
+  const goals = useGameStore((s) => s.goals);
   const homeClub = useGameStore((s) => getClub(s.homeClubId));
   const awayClub = useGameStore((s) => getClub(s.awayClubId));
 
@@ -33,19 +35,21 @@ export function MatchHud({ onExit }: { onExit?: (() => void) | undefined }) {
 
   const clock = formatClock(displayClock(period, matchTime));
   const clubOf = (team: "home" | "away") => (team === "home" ? homeClub : awayClub);
+  const lastGoal = goals[goals.length - 1];
 
   const goalSubtitle = (team: "home" | "away") => {
-    if (netRole === "local") return team === "home" ? "You score" : "Conceded";
-    return `${clubOf(team).name} score`;
+    const club = clubOf(team);
+    const minute = lastGoal ? ` · ${lastGoal.minute}'` : "";
+    if (netRole === "local") return `${team === "home" ? "You score" : "Conceded"}${minute}`;
+    return `${club.name}${minute}`;
   };
 
   return (
     <>
-      {/* Always-available way out of a match, back to the main menu. */}
       {onExit && status !== "fulltime" && (
         <button
           onClick={() => setShowExitConfirm(true)}
-          className="fixed right-4 top-5 z-20 rounded-md bg-foreground/80 px-4 py-2 font-sans text-[10px] font-black uppercase tracking-[0.22em] text-background/80 shadow-lg backdrop-blur-sm transition-colors hover:text-background"
+          className="gb-panel fixed right-4 top-5 z-20 px-4 py-2 font-body text-[12px] font-semibold uppercase tracking-[0.08em] text-[#c6cdd5] transition-colors hover:border-[#63d68a] hover:text-[#63d68a]"
         >
           End game
         </button>
@@ -61,166 +65,149 @@ export function MatchHud({ onExit }: { onExit?: (() => void) | undefined }) {
       />
 
       {/* Broadcast score bug */}
-      <div className="pointer-events-none fixed left-1/2 top-5 z-10 -translate-x-1/2">
-        <div className="flex items-stretch overflow-hidden rounded-md bg-foreground/80 font-sans text-background shadow-lg backdrop-blur-sm">
+      <div className="pointer-events-none fixed left-1/2 top-3.5 z-10 -translate-x-1/2 md:top-5">
+        <div className="flex items-stretch overflow-hidden rounded-md border border-white/10 bg-[#0c0e12]/85 shadow-[0_2px_8px_rgba(0,0,0,0.45)] backdrop-blur-[10px]">
           <Badge club={homeClub} />
-          <div className="flex items-center gap-2 px-4 py-2 font-mono text-lg font-bold tabular-nums tracking-widest">
-            <span>{score.home}</span>
-            <span className="opacity-40">-</span>
-            <span>{score.away}</span>
+          <div className="flex items-center gap-2.5 px-3 py-1.5 md:gap-3.5 md:px-5 md:py-2.5">
+            <span className="font-display text-[24px] font-extrabold leading-none text-white md:text-[38px]">
+              {score.home}
+            </span>
+            <span className="h-4 w-[2px] bg-white/25 md:h-[26px]" />
+            <span className="font-display text-[24px] font-extrabold leading-none text-white md:text-[38px]">
+              {score.away}
+            </span>
           </div>
           <Badge club={awayClub} />
-          <div className="flex flex-col items-center justify-center border-l border-background/20 px-3 py-1">
-            <span className="font-mono text-sm font-semibold tabular-nums leading-tight">
+          <div className="flex flex-col items-center justify-center border-l border-white/10 bg-white/5 px-3 py-1 md:px-[18px]">
+            <span
+              className="font-display text-[18px] font-extrabold leading-none tabular-nums md:text-[26px]"
+              style={{ color: ACCENT }}
+            >
               {clock}
             </span>
-            <span className="text-[9px] font-semibold uppercase tracking-[0.18em] opacity-60">
-              {periodLabel(period)}
+            <span className="hidden font-mono text-[10px] tracking-[0.16em] text-[#9aa4af] md:block">
+              {periodLabel(period).toUpperCase()}
             </span>
           </div>
         </div>
       </div>
 
-      {/* Status overlays */}
+      {/* Bookings strip — top-left, one row per card */}
+      {bookings.length > 0 && (
+        <div className="pointer-events-none fixed left-4 top-[58px] z-10 flex flex-col gap-1.5 md:left-[22px] md:top-[22px]">
+          {bookings.map((b, i) => (
+            <div key={i} className="gb-panel flex items-center gap-2 px-2.5 py-1.5">
+              <span
+                aria-hidden
+                className="block h-[15px] w-[11px] shrink-0 rounded-[2px]"
+                style={{ background: b.color === "yellow" ? "#f4c20d" : "#e2444a" }}
+              />
+              <span className="font-display text-[15px] font-bold tracking-[0.04em] text-[#e8ecf0] md:text-[17px]">
+                {b.playerName}
+              </span>
+              <span className="font-mono text-[11px] text-[#9aa4af]">{b.minute}'</span>
+              {b.color === "red" && (
+                <span className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#e2444a]">
+                  off
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Event banners */}
       {status === "goal" && lastScorer && (
         <Banner
-          title="GOAL!"
-          subtitle={goalSubtitle(lastScorer)}
-          accent={clubOf(lastScorer).primaryColor}
+          key={goals.length}
+          title="GOAL"
+          sub={goalSubtitle(lastScorer)}
+          bg={ACCENT}
+          fg="#0a0c0f"
+          subFg="rgba(10,12,15,0.72)"
         />
       )}
-      {status === "kickoff" && <Banner title="KICK OFF" subtitle={periodLabel(period)} />}
+      {status === "kickoff" && (
+        <Banner
+          title="KICK OFF"
+          sub={periodLabel(period)}
+          bg="#ffffff"
+          fg="#0a0c0f"
+          subFg="rgba(10,12,15,0.7)"
+        />
+      )}
       {status === "halftime" && (
         <Banner
           title={period >= MATCH_TUNING.periods ? "BREAK" : "HALF TIME"}
-          subtitle={`${homeClub.shortName} ${score.home} - ${score.away} ${awayClub.shortName}`}
+          sub={`${homeClub.shortName} ${score.home} – ${score.away} ${awayClub.shortName}`}
+          hold
         />
       )}
       {status === "extratime" && (
-        <Banner title="EXTRA TIME" subtitle={`Level at ${score.home} - ${score.away}`} />
+        <Banner title="EXTRA TIME" sub={`Level at ${score.home} – ${score.away}`} hold />
       )}
 
-      {status === "fulltime" && (
-        <Banner
-          title="FULL TIME"
-          subtitle={`${homeClub.shortName} ${score.home} - ${score.away} ${awayClub.shortName}`}
-        >
-          <div className="pointer-events-auto mt-5 flex justify-center gap-3">
-            {netRole !== "guest" && (
-              <button
-                onClick={() => resetMatch()}
-                className="rounded-md bg-background px-5 py-2 text-[11px] font-black uppercase tracking-[0.2em] text-foreground transition-transform hover:scale-[1.03]"
-              >
-                Rematch
-              </button>
-            )}
-            {onExit && (
-              <button
-                onClick={onExit}
-                className="rounded-md border border-background/40 px-5 py-2 text-[11px] font-black uppercase tracking-[0.2em] text-background/80 transition-colors hover:bg-background/10"
-              >
-                Main menu
-              </button>
-            )}
-          </div>
-        </Banner>
-      )}
-
-      {/* Bookings ticker along the bottom edge — quiet when empty. */}
-      {bookings.length > 0 && (
-        <BookingsTicker bookings={bookings} homeClub={homeClub} awayClub={awayClub} />
-      )}
+      {status === "fulltime" && <PostMatch onExit={onExit} />}
     </>
-  );
-}
-
-function BookingsTicker({
-  bookings,
-  homeClub,
-  awayClub,
-}: {
-  bookings: Booking[];
-  homeClub: Club;
-  awayClub: Club;
-}) {
-  return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-4 z-10 flex justify-center px-4">
-      <div className="flex max-w-full items-center gap-3 overflow-x-auto rounded-md bg-foreground/80 px-4 py-2 font-sans text-[11px] text-background shadow-lg backdrop-blur-sm">
-        <span className="shrink-0 font-bold uppercase tracking-[0.2em] text-background/60">
-          Bookings
-        </span>
-        {bookings.map((b, i) => (
-          <div key={i} className="flex shrink-0 items-center gap-1.5">
-            <span
-              aria-hidden
-              className={`inline-block h-3.5 w-2.5 rounded-sm ${
-                b.color === "yellow" ? "bg-yellow-400" : "bg-red-500"
-              }`}
-              style={{ boxShadow: "0 0 0 1px rgba(0,0,0,0.3)" }}
-            />
-            <span className="font-mono tabular-nums text-background/50">{b.minute}'</span>
-            <span className="font-semibold">{b.playerName}</span>
-            <span className="text-background/40">
-              ({b.team === "home" ? homeClub.shortName : awayClub.shortName})
-            </span>
-            {b.color === "red" && (
-              <span className="ml-1 rounded-sm bg-red-500/80 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-widest text-white">
-                Sent off
-              </span>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
   );
 }
 
 function Badge({ club }: { club: Club }) {
   return (
     <div
-      className="flex items-center gap-2 px-3 py-2 text-[11px] font-bold tracking-[0.16em]"
+      className="flex items-center px-2.5 md:px-4"
       style={{ backgroundColor: club.primaryColor, color: textOn(club.primaryColor) }}
       title={club.name}
     >
-      <span
-        aria-hidden
-        className="inline-block h-3 w-3 rounded-full"
-        style={{
-          backgroundColor: club.secondaryColor,
-          boxShadow: "0 0 0 1.5px rgba(0,0,0,0.35)",
-        }}
-      />
-      {club.shortName}
+      <span className="font-display text-[20px] font-extrabold tracking-[0.04em] md:text-[30px]">
+        {club.shortName}
+      </span>
     </div>
   );
 }
 
-function Banner({
+/**
+ * Centre-screen event banner. Animated variants fade out after 1.3 s on
+ * their own; `hold` variants stay while the status lasts (half time, etc).
+ */
+export function Banner({
   title,
-  subtitle,
-  accent,
-  children,
+  sub,
+  bg = "rgba(12,14,18,0.92)",
+  fg = ACCENT,
+  subFg = "#e8ecf0",
+  hold = false,
 }: {
   title: string;
-  subtitle?: string;
-  accent?: string;
-  children?: React.ReactNode;
+  sub?: string;
+  bg?: string;
+  fg?: string;
+  subFg?: string;
+  hold?: boolean;
 }) {
+  const bordered = bg.startsWith("rgba(12");
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-1/3 z-10 flex flex-col items-center">
+    <div
+      className={`pointer-events-none fixed left-1/2 top-1/2 z-20 ${hold ? "gb-banner-hold" : "gb-banner-in"}`}
+    >
       <div
-        className="rounded-lg bg-foreground/80 px-10 py-5 text-center backdrop-blur-sm"
-        style={accent ? { boxShadow: `0 0 0 3px ${accent}` } : undefined}
+        className="flex flex-col items-center gap-1 rounded-md px-8 py-3.5 shadow-[0_2px_8px_rgba(0,0,0,0.5)] md:px-16 md:py-5"
+        style={{ background: bg, border: bordered ? "1px solid rgba(255,255,255,0.14)" : "none" }}
       >
-        <div className="font-sans text-5xl font-black tracking-[0.1em] text-background">
+        <span
+          className="whitespace-nowrap font-display text-[48px] font-extrabold uppercase leading-[0.85] tracking-[0.02em] md:text-[96px]"
+          style={{ color: fg }}
+        >
           {title}
-        </div>
-        {subtitle && (
-          <div className="mt-1 text-xs font-semibold uppercase tracking-[0.3em] text-background/70">
-            {subtitle}
-          </div>
+        </span>
+        {sub && (
+          <span
+            className="whitespace-nowrap font-mono text-[11px] uppercase tracking-[0.2em] md:text-[15px]"
+            style={{ color: subFg }}
+          >
+            {sub}
+          </span>
         )}
-        {children}
       </div>
     </div>
   );

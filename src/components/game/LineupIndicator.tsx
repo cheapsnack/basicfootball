@@ -15,8 +15,8 @@ export function LineupIndicator() {
   if (reds.length === 0) return null;
 
   return (
-    <div className="pointer-events-none fixed left-1/2 top-[68px] z-10 -translate-x-1/2">
-      <div className="flex items-center gap-4 rounded-md bg-foreground/75 px-4 py-1.5 font-sans text-[11px] text-background shadow-lg backdrop-blur-sm">
+    <div className="pointer-events-none fixed left-1/2 top-[64px] z-10 -translate-x-1/2 md:top-[76px]">
+      <div className="gb-panel flex items-center gap-4 px-4 py-1.5 font-mono text-[11px] tracking-[0.1em] text-[#e8ecf0]">
         <TeamCount team="home" label="YOU" bookings={bookings} />
         <span className="opacity-30">|</span>
         <TeamCount team="away" label={awayLabel} bookings={bookings} />
@@ -42,18 +42,18 @@ function TeamCount({
 
   return (
     <div className="flex items-center gap-2">
-      <span className="font-bold uppercase tracking-[0.18em] text-background/60">{label}</span>
+      <span className="uppercase tracking-[0.18em] text-[#9aa4af]">{label}</span>
       <span
-        className={`font-mono text-sm font-bold tabular-nums ${
-          count < 11 ? "text-red-400" : ""
+        className={`font-display text-[16px] font-extrabold tabular-nums ${
+          count < 11 ? "text-[#e2444a]" : ""
         }`}
       >
         {count}
       </span>
-      <span className="text-background/40">on pitch</span>
+      <span className="text-[#5d6a76]">on pitch</span>
       {off.length > 0 && (
-        <span className="flex items-center gap-1 text-background/70">
-          <span aria-hidden className="inline-block h-3 w-2 rounded-sm bg-red-500" />
+        <span className="flex items-center gap-1.5 text-[#c6cdd5]">
+          <span aria-hidden className="inline-block h-3 w-2 rounded-[2px] bg-[#e2444a]" />
           {names.join(", ")}
         </span>
       )}

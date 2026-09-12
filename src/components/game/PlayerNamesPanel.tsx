@@ -2,12 +2,21 @@ import { useEffect, useState } from "react";
 import { useGameStore, HOME_DEFEND_SIDE, AWAY_DEFEND_SIDE } from "../../game/store/useGameStore";
 import { getClub } from "../../game/data/clubs";
 import { buildOutfield } from "../../game/logic/ai/outfield";
+import type { PlayerPosition } from "../../game/types";
+import { textOn } from "./MatchHud";
 
-type Row = { name: string; color: string; club: string } | null;
+type Row = {
+  name: string;
+  position: PlayerPosition;
+  number: number;
+  color: string;
+  ink: string;
+  club: string;
+} | null;
 
 /**
- * On-screen names of the human-controlled players only: yours bottom-left
- * and — in a two-human match (local 1v1 or an online room) — the opponent's
+ * Card for the human-controlled player: yours bottom-left and — in a
+ * two-human match (local 1v1 or an online room) — the opponent's
  * bottom-right. Rendered as DOM rather than 3D labels so it never ghosts in
  * networked matches, where positions mutate in place without re-rendering.
  */
@@ -27,16 +36,31 @@ export function PlayerNamesPanel() {
       const mine = homeXI[s.controlledIndex];
       setHome(
         mine
-          ? { name: mine.player.name, color: homeClub.primaryColor, club: homeClub.shortName }
+          ? {
+              name: mine.player.name,
+              position: mine.player.position,
+              number: s.controlledIndex + 2,
+              color: homeClub.primaryColor,
+              ink: textOn(homeClub.primaryColor),
+              club: homeClub.shortName,
+            }
           : null,
       );
 
       if (twoHuman) {
         const awayXI = buildOutfield(awayClub, AWAY_DEFEND_SIDE, s.mentality);
-        const theirs = s.awayControlledIndex == null ? undefined : awayXI[s.awayControlledIndex];
+        const idx = s.awayControlledIndex;
+        const theirs = idx == null ? undefined : awayXI[idx];
         setAway(
-          theirs
-            ? { name: theirs.player.name, color: awayClub.primaryColor, club: awayClub.shortName }
+          theirs && idx != null
+            ? {
+                name: theirs.player.name,
+                position: theirs.player.position,
+                number: idx + 2,
+                color: awayClub.primaryColor,
+                ink: textOn(awayClub.primaryColor),
+                club: awayClub.shortName,
+              }
             : null,
         );
       } else {
@@ -51,31 +75,45 @@ export function PlayerNamesPanel() {
 
   return (
     <>
-      {home && <NameCard row={home} side="left" tag="You" />}
+      {home && <NameCard row={home} side="left" tag="YOU" />}
       {away && <NameCard row={away} side="right" tag="P2" />}
     </>
   );
 }
 
-function NameCard({ row, side, tag }: { row: NonNullable<Row>; side: "left" | "right"; tag: string }) {
+function NameCard({
+  row,
+  side,
+  tag,
+}: {
+  row: NonNullable<Row>;
+  side: "left" | "right";
+  tag: string;
+}) {
   return (
     <div
-      className={`pointer-events-none fixed bottom-4 z-10 flex items-center gap-2.5 rounded-lg bg-foreground/80 px-4 py-2.5 font-sans text-background shadow-lg backdrop-blur-sm ${
-        side === "left" ? "left-4" : "right-4"
+      className={`gb-panel pointer-events-none fixed bottom-4 z-10 hidden w-[300px] items-center gap-3 px-3 py-2.5 md:flex ${
+        side === "left" ? "left-[22px]" : "right-[22px] flex-row-reverse text-right"
       }`}
     >
-      <span
-        aria-hidden
-        className="inline-block h-4 w-4 rounded-full"
-        style={{ backgroundColor: row.color, boxShadow: "0 0 0 1px rgba(0,0,0,0.35)" }}
-      />
-      <div className="flex flex-col leading-tight">
-        <span className="text-lg font-black text-yellow-300">{row.name}</span>
-        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-background/60">
-          {row.club}
+      <div
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md"
+        style={{ background: row.color, color: row.ink }}
+      >
+        <span className="font-display text-[22px] font-extrabold">{row.number}</span>
+      </div>
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <span className="truncate font-display text-[22px] font-extrabold uppercase leading-none tracking-[0.03em] text-[#e8ecf0]">
+          {row.name}
+        </span>
+        <span className="font-mono text-[11px] tracking-[0.1em] text-[#9aa4af]">
+          {row.position} · {row.club}
         </span>
       </div>
-      <span className="rounded-sm bg-yellow-400/90 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-widest text-foreground">
+      <span
+        className={`font-display text-[14px] font-extrabold tracking-[0.1em] ${side === "left" ? "ml-auto" : "mr-auto"}`}
+        style={{ color: "#63d68a" }}
+      >
         {tag}
       </span>
     </div>

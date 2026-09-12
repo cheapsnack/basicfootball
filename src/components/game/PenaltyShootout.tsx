@@ -4,6 +4,7 @@ import { getClub } from "../../game/data/clubs";
 import { DIFFICULTY_TUNING } from "../../game/logic/ai/difficulty";
 import { playKick, playWhistle } from "../../game/logic/audio";
 import { ExitConfirm } from "./ExitConfirm";
+import { textOn } from "./MatchHud";
 import {
   DEFAULT_GOAL_RECT,
   SetPiece3DScene,
@@ -284,14 +285,15 @@ export function PenaltyShootout({ onExit }: { onExit?: (() => void) | undefined 
   const homeGoals = shootoutScore(shootout.home);
   const awayGoals = shootoutScore(shootout.away);
   const takerClub = takerSide === "home" ? homeClub : awayClub;
+  const takerInk = textOn(takerClub.primaryColor);
   const reticle = toScene(goalRect, aim);
 
   return (
-    <div className="fixed inset-0 z-30 flex flex-col items-center justify-center overflow-y-auto bg-[#0b1410]/97 px-4 py-6 text-background">
+    <div className="gb-stripes fixed inset-0 z-30 flex flex-col items-center justify-center overflow-y-auto px-4 py-6 font-body text-[#e8ecf0]">
       {onExit && (
         <button
           onClick={() => setShowExitConfirm(true)}
-          className="absolute right-4 top-4 rounded-md border border-background/30 px-4 py-2 text-[10px] font-black uppercase tracking-[0.22em] text-background/70 transition-colors hover:bg-background/10"
+          className="gb-panel absolute right-4 top-4 px-4 py-2 text-[12px] font-semibold uppercase tracking-[0.08em] text-[#c6cdd5] transition-colors hover:border-[#63d68a] hover:text-[#63d68a]"
         >
           End game
         </button>
@@ -306,46 +308,55 @@ export function PenaltyShootout({ onExit }: { onExit?: (() => void) | undefined 
         }}
       />
 
-      <div className="text-[11px] font-bold uppercase tracking-[0.42em] text-background/50">
-        Penalty Shootout
-      </div>
-
-      {/* Shootout difficulty: keeper reading and power-window width */}
-      <div className="mt-3 flex flex-col items-center gap-1">
-        <div className="flex gap-1.5">
+      {/* Shootout panel: label, sudden-death tag, per-side round dots */}
+      <div className="gb-panel flex w-full max-w-2xl flex-col gap-3 px-4 py-3.5 md:px-5">
+        <div className="flex items-center justify-between">
+          <span className="font-mono text-[11px] tracking-[0.2em] text-[#9aa4af]">PENALTY SHOOTOUT</span>
+          {shootout.round > PENALTY_TUNING.rounds ? (
+            <span className="rounded-[4px] bg-[#e2444a] px-2 py-0.5 font-mono text-[10px] font-bold tracking-[0.18em] text-white">
+              SUDDEN DEATH
+            </span>
+          ) : (
+            <span className="font-mono text-[10px] tracking-[0.18em] text-[#5d6a76]">
+              KICK {shootout.round} OF {PENALTY_TUNING.rounds}
+            </span>
+          )}
+        </div>
+        <KickRow
+          label={homeClub.shortName}
+          color={homeClub.primaryColor}
+          score={homeGoals}
+          results={shootout.home}
+          active={takerSide === "home" && !shootout.winner}
+        />
+        <KickRow
+          label={awayClub.shortName}
+          color={awayClub.primaryColor}
+          score={awayGoals}
+          results={shootout.away}
+          active={takerSide === "away" && !shootout.winner}
+        />
+        {/* Shootout difficulty: keeper reading and power-window width */}
+        <div className="flex flex-wrap items-center gap-1.5 border-t border-white/10 pt-3">
           {PENALTY_LEVELS.map((lv) => {
             const active = lv === penaltyLevel;
             return (
               <button
                 key={lv}
                 onClick={() => setPenaltyLevel(lv)}
-                className={`rounded-md border px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.18em] transition-colors ${
-                  active
-                    ? "border-background/70 bg-background/15 text-background"
-                    : "border-background/20 text-background/55 hover:bg-background/10"
-                }`}
+                className="rounded-md border px-3 py-1 font-display text-[14px] font-extrabold uppercase tracking-[0.1em] transition-colors"
+                style={{
+                  background: active ? "#63d68a" : "rgba(255,255,255,0.06)",
+                  color: active ? "#0a0c0f" : "#c6cdd5",
+                  borderColor: active ? "#63d68a" : "rgba(255,255,255,0.12)",
+                }}
               >
                 {PENALTY_LEVEL_TUNING[lv].label}
               </button>
             );
           })}
+          <span className="ml-auto font-mono text-[10px] tracking-[0.14em] text-[#5d6a76]">{level.blurb}</span>
         </div>
-        <div className="text-[10px] uppercase tracking-[0.16em] text-background/40">{level.blurb}</div>
-      </div>
-
-      {/* Score line */}
-      <div className="mt-2 flex items-center gap-4 font-mono text-4xl font-black tabular-nums">
-        <span style={{ color: homeClub.primaryColor }}>{homeClub.shortName}</span>
-        <span>{homeGoals}</span>
-        <span className="opacity-40">-</span>
-        <span>{awayGoals}</span>
-        <span style={{ color: awayClub.primaryColor }}>{awayClub.shortName}</span>
-      </div>
-
-      {/* Round dots */}
-      <div className="mt-3 space-y-1.5">
-        <KickRow label={homeClub.shortName} results={shootout.home} active={takerSide === "home" && !shootout.winner} />
-        <KickRow label={awayClub.shortName} results={shootout.away} active={takerSide === "away" && !shootout.winner} />
       </div>
 
       {/* ---- the shot itself ---- */}
@@ -457,35 +468,41 @@ export function PenaltyShootout({ onExit }: { onExit?: (() => void) | undefined 
       </div>
 
       {shootout.winner ? (
-        <div className="mt-5 text-center">
-          <div className="font-sans text-4xl font-black uppercase tracking-[0.1em] text-[#63d68a]">
+        <div className="gb-panel-solid mt-5 flex flex-col items-center gap-1 px-10 py-5 text-center">
+          <div className="font-display text-[44px] font-extrabold uppercase leading-[0.9] tracking-[0.02em] text-[#63d68a]">
             {shootout.winner === "home" ? homeClub.name : awayClub.name} win
           </div>
-          <div className="mt-1 text-xs font-semibold uppercase tracking-[0.3em] text-background/60">
-            {homeGoals} - {awayGoals} on penalties
+          <div className="font-mono text-[12px] tracking-[0.2em] text-[#9aa4af]">
+            {homeGoals} – {awayGoals} ON PENALTIES
           </div>
           {onExit && (
             <button
               onClick={onExit}
-              className="pointer-events-auto mt-5 rounded-md bg-[#63d68a] px-6 py-3 text-[11px] font-black uppercase tracking-[0.24em] text-[#0d1a12]"
+              className="pointer-events-auto mt-4 rounded-md bg-[#63d68a] px-8 py-3 font-display text-[20px] font-extrabold uppercase tracking-[0.1em] text-[#0a0c0f] transition-colors hover:bg-[#7ce39c]"
             >
               Main menu
             </button>
           )}
         </div>
       ) : (
-        <p className="mt-4 max-w-md text-center text-xs leading-relaxed text-background/60">
-          <span className="font-bold text-background/90">
-            {takerClub.shortName} to take{" "}
-            {shootout.round > PENALTY_TUNING.rounds
-              ? "(sudden death)"
-              : `— kick ${shootout.round} of ${PENALTY_TUNING.rounds}`}
+        <div className="gb-panel mt-4 flex w-full max-w-2xl items-center gap-4 px-4 py-3">
+          <div
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md font-display text-[22px] font-extrabold"
+            style={{ background: takerClub.primaryColor, color: takerInk }}
+          >
+            {takerClub.shortName.slice(0, 1)}
+          </div>
+          <div className="flex flex-col">
+            <span className="font-mono text-[10px] tracking-[0.18em] text-[#63d68a]">NOW TAKING</span>
+            <span className="font-display text-[26px] font-extrabold uppercase leading-none">
+              {takerClub.shortName}
+            </span>
+          </div>
+          <span className="h-[34px] w-px bg-white/15" />
+          <span className="font-mono text-[11px] text-[#9aa4af]">
+            {isHomeTurn ? "ARROWS AIM · HOLD SPACE FOR POWER" : "WAITING FOR THE OPPONENT…"}
           </span>
-          <br />
-          {isHomeTurn
-            ? "Arrows / WASD aim · hold Space for power · release to strike"
-            : "Waiting for the opponent…"}
-        </p>
+        </div>
       )}
     </div>
   );
@@ -493,38 +510,49 @@ export function PenaltyShootout({ onExit }: { onExit?: (() => void) | undefined 
 
 function KickRow({
   label,
+  color,
+  score,
   results,
   active,
 }: {
   label: string;
+  color: string;
+  score: number;
   results: PenaltyOutcome[];
   active: boolean;
 }) {
   const slots = Math.max(PENALTY_TUNING.rounds, results.length);
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center justify-between gap-4">
       <span
-        className={`w-14 text-right font-mono text-[10px] uppercase tracking-widest ${
-          active ? "text-[#63d68a]" : "text-background/50"
-        }`}
+        className="w-16 font-display text-[24px] font-extrabold tracking-[0.04em]"
+        style={{ color: active ? "#63d68a" : "#ffffff" }}
       >
         {label}
       </span>
-      {Array.from({ length: slots }, (_, i) => {
-        const r = results[i];
-        return (
-          <span
-            key={i}
-            className={`h-3.5 w-3.5 rounded-full border ${
-              r === "goal"
-                ? "border-[#63d68a] bg-[#63d68a]"
-                : r
-                  ? "border-[#ff7a6a] bg-[#ff7a6a]/30"
-                  : "border-background/25"
-            }`}
-          />
-        );
-      })}
+      <div className="flex gap-2">
+        {Array.from({ length: slots }, (_, i) => {
+          const r = results[i];
+          const pending = active && i === results.length;
+          return (
+            <span
+              key={i}
+              className="h-3.5 w-3.5 rounded-full"
+              style={{
+                background: r === "goal" ? "#63d68a" : r ? "#e2444a" : "transparent",
+                border: `2px solid ${r === "goal" ? "#63d68a" : r ? "#e2444a" : pending ? color : "rgba(255,255,255,0.25)"}`,
+                boxShadow: pending ? `0 0 0 2px ${color}55` : "none",
+              }}
+            />
+          );
+        })}
+      </div>
+      <span
+        className="w-10 text-right font-display text-[30px] font-extrabold leading-none"
+        style={{ color: active ? "#63d68a" : "#ffffff" }}
+      >
+        {score}
+      </span>
     </div>
   );
 }
