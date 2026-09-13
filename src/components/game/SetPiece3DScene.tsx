@@ -280,7 +280,7 @@ function Keeper({
     startedAt.current = performance.now();
     if (groupRef.current) fromRef.current.copy(groupRef.current.position);
     const idle = actions["Idle"];
-    const tackle = actions["Tackle"]; // re-use tackle as dive
+    const tackle = actions["GK_Dive"] ?? actions["Tackle"]; // real dive clip when the model has one
     if (idle) idle.fadeOut(0.08);
     if (tackle) {
       tackle.reset().play();

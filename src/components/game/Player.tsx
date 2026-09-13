@@ -13,6 +13,8 @@ const JERSEY_MESH = "Player_Jersey";
 const KIT_MESHES = ["Player_Shorts", "Player_Socks"];
 
 type ClipName = "Idle" | "Run" | "Sprint" | "Kick" | "Tackle";
+/** Longest a one-shot may suppress locomotion, in seconds. */
+const ONE_SHOT_MAX: Record<"Kick" | "Tackle", number> = { Kick: 0.7, Tackle: 1.0 };
 
 /**
  * Speed (m/s) at which each locomotion clip is fully blended in. Tuned
@@ -124,7 +126,9 @@ export const Player = forwardRef<THREE.Group, Props>(function Player(
     action.clampWhenFinished = true;
     action.setEffectiveWeight(1);
     action.play();
-    oneShotUntil.current = elapsed + action.getClip().duration;
+    // Hold locomotion off for the clip, but never longer than the body's
+    // actual action — a long "going to ground" clip must not pin a tackler.
+    oneShotUntil.current = elapsed + Math.min(action.getClip().duration, ONE_SHOT_MAX[name]);
   };
 
   useFrame((state, dt) => {
