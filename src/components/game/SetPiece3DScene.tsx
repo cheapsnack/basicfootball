@@ -265,14 +265,23 @@ function Keeper({
     return () => Object.values(actions).forEach((a) => a?.stop());
   }, []);
 
+  const hasDiveClip = !!actions["GK_Dive"];
+
   useEffect(() => {
     if (!diveTarget) {
-      // Reset between kicks.
+      // Reset between kicks: stop the dive clip outright (it's clamped on its
+      // last frame, lying on the turf) and stand him back up.
       diveRef.current = null;
       const g = groupRef.current;
-      if (g) g.position.set(0, 0, 0.3);
+      if (g) {
+        g.position.set(0, 0, 0.3);
+        g.rotation.z = 0;
+        g.scale.set(0.9, 0.9, 0.9);
+      }
+      actions["GK_Dive"]?.stop();
+      actions["Tackle"]?.stop();
       const idle = actions["Idle"];
-      if (idle && !idle.isRunning()) idle.reset().fadeIn(0.15).play();
+      if (idle) idle.reset().fadeIn(0.15).play();
       return;
     }
     if (diveRef.current) return;
@@ -280,13 +289,18 @@ function Keeper({
     startedAt.current = performance.now();
     if (groupRef.current) fromRef.current.copy(groupRef.current.position);
     const idle = actions["Idle"];
-    const tackle = actions["GK_Dive"] ?? actions["Tackle"]; // real dive clip when the model has one
+    const dive = actions["GK_Dive"] ?? actions["Tackle"]; // real dive clip when the model has one
     if (idle) idle.fadeOut(0.08);
-    if (tackle) {
-      tackle.reset().play();
-      tackle.setLoop(THREE.LoopOnce, 1);
-      tackle.clampWhenFinished = true;
-      tackle.setEffectiveWeight(1);
+    if (dive) {
+      // The dive clip goes to the keeper's left; mirror it for the other side.
+      if (hasDiveClip && groupRef.current) {
+        const toRight = diveTarget.x > 0;
+        groupRef.current.scale.set(toRight ? -0.9 : 0.9, 0.9, 0.9);
+      }
+      dive.reset().play();
+      dive.setLoop(THREE.LoopOnce, 1);
+      dive.clampWhenFinished = true;
+      dive.setEffectiveWeight(1);
     }
   }, [diveTarget]);
 
@@ -304,11 +318,14 @@ function Keeper({
     const reach = reach2d * (GOAL_W / 2) * 2;
     const rawX = diveRef.current.x * (GOAL_W / 2) * 0.92;
     const tx = THREE.MathUtils.clamp(rawX, -reach, reach);
-    const ty = Math.max(0, Math.min(diveRef.current.y * GOAL_H * 0.55, GOAL_H * 0.55));
+    // With a real dive clip the animation supplies the body shape and the
+    // drop to the turf; the group only slides across and lifts a little for
+    // high balls. Without one (old model) fall back to the procedural lean.
+    const liftCap = hasDiveClip ? 0.3 : GOAL_H * 0.55;
+    const ty = Math.max(0, Math.min(diveRef.current.y * GOAL_H * 0.55, liftCap));
     g.position.x = THREE.MathUtils.lerp(fromRef.current.x, tx, e);
     g.position.y = THREE.MathUtils.lerp(fromRef.current.y, ty, e);
-    // Leans into the dive as he extends.
-    g.rotation.z = -Math.sign(tx) * e * Math.min(1, Math.abs(tx) / 2.2) * 0.9;
+    g.rotation.z = hasDiveClip ? 0 : -Math.sign(tx) * e * Math.min(1, Math.abs(tx) / 2.2) * 0.9;
   });
 
   return (
