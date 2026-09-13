@@ -79,6 +79,14 @@ export const Player = forwardRef<THREE.Group, Props>(function Player(
       mesh.frustumCulled = false;
       if (mesh.name === JERSEY_MESH || KIT_MESHES.includes(mesh.name)) {
         mesh.material = (mesh.material as THREE.MeshStandardMaterial).clone();
+      } else if (/body/i.test(mesh.name)) {
+        // The skin sits directly under the kit; nudge it back in depth so the
+        // shirt and shorts always win where the two surfaces nearly coincide.
+        const body = (mesh.material as THREE.MeshStandardMaterial).clone();
+        body.polygonOffset = true;
+        body.polygonOffsetFactor = 1;
+        body.polygonOffsetUnits = 2;
+        mesh.material = body;
       }
     });
     return clone;
