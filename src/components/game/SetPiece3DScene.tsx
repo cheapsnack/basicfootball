@@ -3,9 +3,16 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { useGLTF, useAnimations } from "@react-three/drei";
 import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
+import { Sky } from "@react-three/drei";
 import { FREEKICK_TUNING } from "../../game/logic/freekicks";
+import { Pitch } from "./Pitch";
+import { Stadium } from "./Stadium";
+import { PITCH_LENGTH } from "./pitchTexture";
+import { createNetTexture, makeNetMaterial } from "./Goal";
 
 const MODEL_PATH = "/models/football-player.glb";
+const SKY = "#8fc3e8";
+const SUN: [number, number, number] = [30, 70, 45];
 useGLTF.preload(MODEL_PATH);
 
 // ─── geometry constants (must match the 2D GOAL constants in the mini-game) ──
@@ -54,44 +61,69 @@ export type SetPieceKick = {
 
 const NET_D = 1.6; // how deep the net runs behind the line
 
-/** Simple goal: two posts, a crossbar, and a single back net plane. */
+/** Goal frame with the same woven net as the match scene. */
 function GoalNet() {
   const half = GOAL_W / 2;
+  const texture = useMemo(() => createNetTexture(), []);
+  useEffect(() => () => texture.dispose(), [texture]);
+  const mat = useMemo(
+    () => ({
+      back: makeNetMaterial(texture, GOAL_W, GOAL_H),
+      side: makeNetMaterial(texture, NET_D, GOAL_H),
+      roof: makeNetMaterial(texture, GOAL_W, NET_D),
+    }),
+    [texture],
+  );
+  useEffect(
+    () => () => {
+      mat.back.dispose();
+      mat.side.dispose();
+      mat.roof.dispose();
+    },
+    [mat],
+  );
+  const post = <meshStandardMaterial color="#f2f4f6" roughness={0.4} metalness={0.1} />;
   return (
     <group position={[0, 0, 0]}>
-      {/* Posts */}
       {[-half, half].map((x) => (
-        <mesh key={x} position={[x, GOAL_H / 2, 0]}>
+        <mesh key={x} position={[x, GOAL_H / 2, 0]} castShadow>
           <cylinderGeometry args={[POST_R, POST_R, GOAL_H, 12]} />
-          <meshStandardMaterial color="#ffffff" roughness={0.35} metalness={0.05} />
+          {post}
         </mesh>
       ))}
-      {/* Crossbar */}
-      <mesh position={[0, GOAL_H, 0]} rotation-z={Math.PI / 2}>
+      <mesh position={[0, GOAL_H, 0]} rotation-z={Math.PI / 2} castShadow>
         <cylinderGeometry args={[POST_R, POST_R, GOAL_W + POST_R * 2, 12]} />
-        <meshStandardMaterial color="#ffffff" roughness={0.35} metalness={0.05} />
+        {post}
       </mesh>
-
-      {/* Back net — one plain plane, no grid lines */}
-      <mesh position={[0, GOAL_H / 2, -NET_D]}>
+      {/* rear stanchions */}
+      {[-half, half].map((x) => (
+        <mesh key={`s${x}`} position={[x, GOAL_H / 2, -NET_D]} castShadow>
+          <cylinderGeometry args={[POST_R * 0.6, POST_R * 0.6, GOAL_H, 8]} />
+          {post}
+        </mesh>
+      ))}
+      {/* back net */}
+      <mesh position={[0, GOAL_H / 2, -NET_D]} material={mat.back}>
         <planeGeometry args={[GOAL_W, GOAL_H]} />
-        <meshBasicMaterial
-          color="#f2fbff"
-          transparent
-          opacity={0.16}
-          side={THREE.DoubleSide}
-        />
       </mesh>
-
-      {/* Goal line only */}
-      <mesh rotation-x={-Math.PI / 2} position={[0, 0.004, 0]}>
-        <planeGeometry args={[GOAL_W + 6, 0.12]} />
-        <meshBasicMaterial color="#ffffff" transparent opacity={0.55} />
+      {/* side nets */}
+      {[-half, half].map((x) => (
+        <mesh
+          key={`n${x}`}
+          position={[x, GOAL_H / 2, -NET_D / 2]}
+          rotation-y={Math.PI / 2}
+          material={mat.side}
+        >
+          <planeGeometry args={[NET_D, GOAL_H]} />
+        </mesh>
+      ))}
+      {/* roof */}
+      <mesh position={[0, GOAL_H, -NET_D / 2]} rotation-x={-Math.PI / 2} material={mat.roof}>
+        <planeGeometry args={[GOAL_W, NET_D]} />
       </mesh>
     </group>
   );
 }
-
 
 /**
  * The struck ball. Its path is derived from the same numbers the 2D outcome
@@ -126,8 +158,7 @@ function Ball({ kick }: { kick: SetPieceKick | null }) {
     // Lateral bend: a sine arc that peaks mid-flight and is scaled so the
     // offset at the wall line equals `bendAroundWall` goal half-widths.
     const bendScale =
-      (kick.curve * FREEKICK_TUNING.bendAroundWall * (GOAL_W / 2)) /
-      Math.sin(Math.PI * WALL_T);
+      (kick.curve * FREEKICK_TUNING.bendAroundWall * (GOAL_W / 2)) / Math.sin(Math.PI * WALL_T);
 
     return { target, endT, endZ, k, bendScale, blocked };
   }, [kick?.id]);
@@ -220,7 +251,6 @@ function Keeper({
   const clonedRef = { current: clonedScene };
   void color;
 
-
   const { actions } = useAnimations(animations, groupRef);
   const diveRef = useRef<{ x: number; y: number } | null>(null);
   const fromRef = useRef(new THREE.Vector3(0, 0, 0.3));
@@ -228,7 +258,10 @@ function Keeper({
 
   useEffect(() => {
     const idle = actions["Idle"];
-    if (idle) { idle.reset().play(); idle.setEffectiveWeight(1); }
+    if (idle) {
+      idle.reset().play();
+      idle.setEffectiveWeight(1);
+    }
     return () => Object.values(actions).forEach((a) => a?.stop());
   }, []);
 
@@ -456,26 +489,6 @@ export type SetPiece3DSceneProps = {
   onGoalRect?: ((r: GoalRect) => void) | undefined;
 };
 
-/** Six-yard box and the front edge of the penalty area, drawn on the turf. */
-function BoxLines() {
-  const line = (w: number, d: number, x: number, z: number) => (
-    <mesh rotation-x={-Math.PI / 2} position={[x, 0.004, z]}>
-      <planeGeometry args={[w, d]} />
-      <meshBasicMaterial color="#ffffff" transparent opacity={0.32} />
-    </mesh>
-  );
-  return (
-    <group>
-      {line(16.5, 0.11, 0, 16.5)}
-      {line(0.11, 16.5, -8.25, 8.25)}
-      {line(0.11, 16.5, 8.25, 8.25)}
-      {line(11, 0.1, 0, 5.5)}
-      {line(0.1, 5.5, -5.5, 2.75)}
-      {line(0.1, 5.5, 5.5, 2.75)}
-    </group>
-  );
-}
-
 /**
  * POV scene for penalty and free kick: camera sits at the penalty spot
  * looking at the goal, with a 3D animated goalkeeper (and optional wall
@@ -501,45 +514,40 @@ export function SetPiece3DScene({
       }}
     >
       <Canvas
-        shadows={false}
+        shadows
         dpr={[1, 1.5]}
-        camera={{ position: [0, CAM_Y, CAM_Z], fov: 40, near: 0.1, far: 60 }}
+        camera={{ position: [0, CAM_Y, CAM_Z], fov: 40, near: 0.1, far: 600 }}
         gl={{ antialias: true, alpha: false }}
-        style={{ background: "linear-gradient(#16321f 0%, #1d4128 45%, #275534 100%)" }}
       >
-        <color attach="background" args={["#17331f"]} />
-        <fog attach="fog" args={["#17331f", 26, 46]} />
-        <ambientLight intensity={0.6} />
-        <directionalLight position={[6, 12, 8]} intensity={1.7} />
-        <directionalLight position={[-6, 6, 4]} intensity={0.5} color="#bcd8ff" />
-        <hemisphereLight args={["#cfe9ff", "#1a4025", 0.55]} />
+        <color attach="background" args={[SKY]} />
+        <fog attach="fog" args={[SKY, 160, 380]} />
+        <Sky distance={500} sunPosition={SUN} turbidity={6} rayleigh={1.4} mieCoefficient={0.004} />
+        <ambientLight intensity={0.55} />
+        <hemisphereLight args={["#cfe6ff", "#2e6b33", 0.5]} />
+        <directionalLight
+          position={SUN}
+          intensity={2}
+          castShadow
+          shadow-mapSize-width={2048}
+          shadow-mapSize-height={2048}
+          shadow-camera-left={-30}
+          shadow-camera-right={30}
+          shadow-camera-top={30}
+          shadow-camera-bottom={-30}
+          shadow-camera-far={200}
+          shadow-bias={-0.0004}
+          shadow-normalBias={0.03}
+        />
         <FitGoal onRect={onGoalRect} />
 
-
-        {/* Pitch surface + mown stripes for depth */}
-        <mesh rotation-x={-Math.PI / 2} position={[0, 0, 3]} receiveShadow>
-          <planeGeometry args={[40, 40]} />
-          <meshStandardMaterial color="#245c2a" roughness={0.95} />
-        </mesh>
-        {Array.from({ length: 10 }, (_, i) => (
-          <mesh
-            key={i}
-            rotation-x={-Math.PI / 2}
-            position={[0, 0.001, -3 + i * 2.4]}
-            visible={i % 2 === 0}
-          >
-            <planeGeometry args={[40, 2.4]} />
-            <meshBasicMaterial color="#2b6b32" transparent opacity={0.55} />
-          </mesh>
-        ))}
-
-        {/* Six-yard box, penalty box front edge and the spot */}
-        <BoxLines />
-        <mesh rotation-x={-Math.PI / 2} position={[0, 0.006, CAM_Z - 0.05]}>
-          <circleGeometry args={[0.11, 16]} />
-          <meshBasicMaterial color="#ffffff" transparent opacity={0.8} />
-        </mesh>
-
+        {/*
+          The full pitch and stadium, turned so the goal line sits at z = 0
+          across x and the pitch runs away toward +z — the mini-game's frame.
+        */}
+        <group position={[0, 0, PITCH_LENGTH / 2]} rotation-y={-Math.PI / 2}>
+          <Pitch />
+          <Stadium />
+        </group>
 
         {/* Goal frame */}
         <GoalNet />

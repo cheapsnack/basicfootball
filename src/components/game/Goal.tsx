@@ -12,7 +12,7 @@ const POST_R = 0.09;
 const NET_RIPPLE = { bulge: 0.55, duration: 0.9, wobbleHz: 4 } as const;
 
 /** Woven net: a tileable grid of thin light threads on a transparent ground. */
-function createNetTexture(): THREE.CanvasTexture {
+export function createNetTexture(): THREE.CanvasTexture {
   const size = 128;
   const canvas = document.createElement("canvas");
   canvas.width = size;
@@ -37,6 +37,27 @@ function createNetTexture(): THREE.CanvasTexture {
   return tex;
 }
 
+/** Net material for a w×h panel, tiled at a 12 cm mesh. Caller disposes. */
+export function makeNetMaterial(
+  texture: THREE.Texture,
+  w: number,
+  h: number,
+): THREE.MeshStandardMaterial {
+  const cellsPerMetre = 1 / 0.12;
+  const t = texture.clone();
+  t.repeat.set((w * cellsPerMetre) / 8, (h * cellsPerMetre) / 8);
+  t.needsUpdate = true;
+  return new THREE.MeshStandardMaterial({
+    map: t,
+    transparent: true,
+    opacity: 0.9,
+    alphaTest: 0.05,
+    side: THREE.DoubleSide,
+    roughness: 0.9,
+    depthWrite: false,
+  });
+}
+
 /** side = 1 -> goal at +x end, side = -1 -> goal at -x end */
 export function Goal({ x, side }: { x: number; side: 1 | -1 }) {
   const halfW = GOAL_WIDTH / 2;
@@ -45,28 +66,14 @@ export function Goal({ x, side }: { x: number; side: 1 | -1 }) {
 
   const texture = useMemo(() => createNetTexture(), []);
   useEffect(() => () => texture.dispose(), [texture]);
-  const netMat = useMemo(() => {
-    const cellsPerMetre = 1 / 0.12; // 12 cm mesh
-    const mk = (w: number, h: number) => {
-      const t = texture.clone();
-      t.repeat.set((w * cellsPerMetre) / 8, (h * cellsPerMetre) / 8);
-      t.needsUpdate = true;
-      return new THREE.MeshStandardMaterial({
-        map: t,
-        transparent: true,
-        opacity: 0.9,
-        alphaTest: 0.05,
-        side: THREE.DoubleSide,
-        roughness: 0.9,
-        depthWrite: false,
-      });
-    };
-    return {
-      back: mk(GOAL_WIDTH, GOAL_HEIGHT),
-      sideNet: mk(GOAL_DEPTH, GOAL_HEIGHT),
-      roof: mk(GOAL_WIDTH, GOAL_DEPTH),
-    };
-  }, [texture]);
+  const netMat = useMemo(
+    () => ({
+      back: makeNetMaterial(texture, GOAL_WIDTH, GOAL_HEIGHT),
+      sideNet: makeNetMaterial(texture, GOAL_DEPTH, GOAL_HEIGHT),
+      roof: makeNetMaterial(texture, GOAL_WIDTH, GOAL_DEPTH),
+    }),
+    [texture],
+  );
   useEffect(
     () => () => {
       netMat.back.dispose();
