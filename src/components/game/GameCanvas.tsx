@@ -47,6 +47,8 @@ export function GameCanvas({ onExit }: { onExit?: (() => void) | undefined }) {
           shadow-camera-top={50}
           shadow-camera-bottom={-50}
           shadow-camera-far={200}
+          shadow-bias={-0.0004}
+          shadow-normalBias={0.03}
         />
 
         <Environment>

@@ -71,6 +71,10 @@ export const Player = forwardRef<THREE.Group, Props>(function Player(
     clone.traverse((obj) => {
       const mesh = obj as THREE.Mesh;
       if (!mesh.isMesh) return;
+      // Real shadow-map shadows from the sun; skinned meshes get culled
+      // wrongly by their bind-pose bounds, so keep them always drawn.
+      mesh.castShadow = true;
+      mesh.frustumCulled = false;
       if (mesh.name === JERSEY_MESH || KIT_MESHES.includes(mesh.name)) {
         mesh.material = (mesh.material as THREE.MeshStandardMaterial).clone();
       }
@@ -176,10 +180,10 @@ export const Player = forwardRef<THREE.Group, Props>(function Player(
   return (
     <group ref={innerRef}>
       <primitive object={clonedScene} />
-      {/* contact shadow disc for grounding, matching the pitch's shadow style */}
+      {/* faint contact occlusion under the feet; the sun shadow does the rest */}
       <mesh rotation-x={-Math.PI / 2} position={[0, 0.012, 0]}>
-        <circleGeometry args={[0.55, 20]} />
-        <meshBasicMaterial color="#0b2410" transparent opacity={0.28} />
+        <circleGeometry args={[0.45, 20]} />
+        <meshBasicMaterial color="#0b2410" transparent opacity={0.14} depthWrite={false} />
       </mesh>
     </group>
   );
