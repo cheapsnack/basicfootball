@@ -11,7 +11,7 @@ export const OUTFIELD_TUNING = {
   interceptLead: 0.35,
   /** stop closing once inside this radius so they don't jitter on the ball */
   pressDeadZone: 0.45,
-  /** sprint when the ball is further away than this */
+  /** a presser sprints when the ball is further away than this; zonal drift uses double */
   sprintRange: 6,
   /**
    * How much the whole team's zonal anchor shifts with the ball x.
