@@ -10,7 +10,7 @@ import { Stadium } from "./Stadium";
 import { PITCH_LENGTH } from "./pitchTexture";
 import { createNetTexture, makeNetMaterial } from "./Goal";
 
-const MODEL_PATH = "/models/football-player.glb";
+const MODEL_PATH = "/models/football-player-v6.glb";
 const SKY = "#8fc3e8";
 const SUN: [number, number, number] = [30, 70, 45];
 useGLTF.preload(MODEL_PATH);

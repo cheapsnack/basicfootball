@@ -4,8 +4,8 @@ import { useFrame } from "@react-three/fiber";
 import { useGLTF, useAnimations } from "@react-three/drei";
 import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
 
-/** Root-relative path — the GLB must live at `public/models/football-player.glb`. */
-const MODEL_PATH = "/models/football-player.glb";
+/** Root-relative path — the GLB must live at `public/models/football-player-v6.glb`. */
+const MODEL_PATH = "/models/football-player-v6.glb";
 useGLTF.preload(MODEL_PATH);
 
 // Matches the GLB's actual node names exactly (verified against the file).
