@@ -355,7 +355,7 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
     const placeGK = (ref: THREE.Group | null, gk: Kinematics, state: { phase: string; diveDir: number }) => {
       if (!ref) return;
       ref.position.set(gk.position.x, 0, gk.position.z);
-      ref.rotation.y = gk.heading;
+      ref.rotation.y = -gk.heading; // heading is a mirror of three.js yaw: see facing note in Player.tsx
       ref.rotation.x = 0;
       ref.userData["speed"] = Math.hypot(gk.velocity.x, gk.velocity.z);
       // Fire the dive clip once per dive. The keeper's right-hand side in
@@ -376,7 +376,7 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
       // Sent-off players are removed from the field entirely.
       ref.visible = !sentOffRef.current.home.has(i);
       ref.position.set(p.position.x, 0, p.position.z);
-      ref.rotation.y = p.heading;
+      ref.rotation.y = -p.heading;
       ref.userData["speed"] = Math.hypot(p.velocity.x, p.velocity.z);
     });
     s.awayOutfield.forEach((p, i) => {
@@ -384,7 +384,7 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
       if (!ref) return;
       ref.visible = !sentOffRef.current.away.has(i);
       ref.position.set(p.position.x, 0, p.position.z);
-      ref.rotation.y = p.heading;
+      ref.rotation.y = -p.heading;
       ref.userData["speed"] = Math.hypot(p.velocity.x, p.velocity.z);
     });
 

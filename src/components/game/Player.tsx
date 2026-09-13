@@ -4,7 +4,15 @@ import { useFrame } from "@react-three/fiber";
 import { useGLTF, useAnimations } from "@react-three/drei";
 import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
 
-/** Root-relative path — the GLB must live at `public/models/football-player-v6.glb`. */
+/**
+ * Root-relative path — the GLB must live at `public/models/football-player-v6.glb`.
+ *
+ * FACING: the model looks down -Z at rest. The simulation's heading h means
+ * "moving toward (sin h, -cos h)", which is a MIRROR of three.js yaw, not a
+ * rotation of it — so a placed model must use `rotation.y = -h`, never `h`.
+ * (`h` only looks right when moving along x; across the pitch it faces
+ * backwards.)
+ */
 const MODEL_PATH = "/models/football-player-v6.glb";
 useGLTF.preload(MODEL_PATH);
 
