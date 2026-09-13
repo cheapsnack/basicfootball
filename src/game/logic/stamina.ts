@@ -33,6 +33,8 @@ export const STAMINA_TUNING = {
   minSpeedMult: 0.8,
   /** stamina restored at half time and before extra time */
   halfTimeRecover: 0.45,
+  /** AI players save their legs: no discretionary sprint below this */
+  aiSprintReserve: 0.35,
 } as const;
 
 /** Per-player stamina state: the tank plus a sprint-lockout latch. */
@@ -41,6 +43,21 @@ export type StaminaState = { tank: number; lockedOut: boolean };
 export const FULL_STAMINA: StaminaState = { tank: 1, lockedOut: false };
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+
+/**
+ * AI sprint discipline: a non-urgent AI input drops sprint when the tank
+ * is under `aiSprintReserve`, so zonal drift never burns the legs a press
+ * or a chase will need. Urgent (pressing, chasing a loose ball) is exempt
+ * — the hard lockout in gateSprint still applies.
+ */
+export function aiSprintDiscipline(
+  input: MovementInput,
+  s: StaminaState,
+  urgent: boolean,
+): MovementInput {
+  if (!input.sprint || urgent || s.tank >= STAMINA_TUNING.aiSprintReserve) return input;
+  return { x: input.x, z: input.z, sprint: false };
+}
 
 /** Whether this player may sprint right now. */
 export function canSprint(s: StaminaState): boolean {

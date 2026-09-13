@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Kinematics } from "../types";
 import { MOVEMENT_TUNING, paramsFromAttributes } from "./movement";
 import {
+  aiSprintDiscipline,
   applyStamina,
   canSprint,
   FULL_STAMINA,
@@ -112,5 +113,16 @@ describe("half time", () => {
     expect(rested.tank).toBeCloseTo(0.05 + T.halfTimeRecover);
     expect(rested.lockedOut).toBe(false);
     expect(recoverAtBreak(FULL_STAMINA).tank).toBe(1);
+  });
+});
+
+describe("AI sprint discipline", () => {
+  it("drops discretionary sprint under the reserve, keeps urgent sprint and human input untouched", () => {
+    const low = { tank: STAMINA_TUNING.aiSprintReserve - 0.05, lockedOut: false };
+    const ok = { tank: STAMINA_TUNING.aiSprintReserve + 0.05, lockedOut: false };
+    expect(aiSprintDiscipline(sprint, low, false).sprint).toBe(false);
+    expect(aiSprintDiscipline(sprint, low, true).sprint).toBe(true);
+    expect(aiSprintDiscipline(sprint, ok, false)).toBe(sprint);
+    expect(aiSprintDiscipline(jog, low, false)).toBe(jog);
   });
 });
