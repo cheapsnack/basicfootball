@@ -7,6 +7,7 @@ import { Sky } from "@react-three/drei";
 import { FREEKICK_TUNING } from "../../game/logic/freekicks";
 import { Pitch } from "./Pitch";
 import { Stadium } from "./Stadium";
+import { PitchDressing } from "./PitchDressing";
 import { PITCH_LENGTH } from "./pitchTexture";
 import { createNetTexture, makeNetMaterial } from "./Goal";
 
@@ -564,6 +565,7 @@ export function SetPiece3DScene({
         <group position={[0, 0, PITCH_LENGTH / 2]} rotation-y={-Math.PI / 2}>
           <Pitch />
           <Stadium />
+          <PitchDressing />
         </group>
 
         {/* Goal frame */}

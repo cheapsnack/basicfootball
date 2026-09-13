@@ -4,6 +4,7 @@ import * as THREE from "three";
 
 import { Pitch } from "./Pitch";
 import { Stadium } from "./Stadium";
+import { PitchDressing } from "./PitchDressing";
 import { Goal } from "./Goal";
 import { Player, PLAYER_HEIGHT } from "./Player";
 import { Ball } from "./Ball";
@@ -1571,6 +1572,12 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
     <>
       <Pitch />
       <Stadium />
+      <PitchDressing
+        halfLength={PITCH.halfLength}
+        halfWidth={PITCH.halfWidth}
+        homeColor={homeClub.primaryColor}
+        awayColor={awayClub.primaryColor}
+      />
       <Goal x={-PITCH_LENGTH / 2} side={-1} />
       <Goal x={PITCH_LENGTH / 2} side={1} />
 
