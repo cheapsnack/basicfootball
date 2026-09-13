@@ -12,9 +12,10 @@ useGLTF.preload(MODEL_PATH);
 const JERSEY_MESH = "Player_Jersey";
 const KIT_MESHES = ["Player_Shorts", "Player_Socks"];
 
-type ClipName = "Idle" | "Run" | "Sprint" | "Kick" | "Tackle";
+type ClipName = "Idle" | "Run" | "Sprint" | "Kick" | "Tackle" | "GK_Dive";
+type OneShot = "Kick" | "Tackle" | "GK_Dive";
 /** Longest a one-shot may suppress locomotion, in seconds. */
-const ONE_SHOT_MAX: Record<"Kick" | "Tackle", number> = { Kick: 0.7, Tackle: 1.0 };
+const ONE_SHOT_MAX: Record<OneShot, number> = { Kick: 0.7, Tackle: 1.0, GK_Dive: 1.4 };
 
 /**
  * Speed (m/s) at which each locomotion clip is fully blended in. Tuned
@@ -46,6 +47,9 @@ export type PlayerUserData = {
   kickCount?: number;
   /** incremented once per tackle attempt; plays the Tackle clip on each change */
   tackleCount?: number;
+  /** incremented once per goalkeeper dive; plays GK_Dive (mirrored if diveMirror) */
+  diveCount?: number;
+  diveMirror?: boolean;
 };
 
 /**
@@ -124,9 +128,10 @@ export const Player = forwardRef<THREE.Group, Props>(function Player(
 
   const lastKick = useRef(0);
   const lastTackle = useRef(0);
+  const lastDive = useRef(0);
   const oneShotUntil = useRef(0);
 
-  const playOneShot = (name: "Kick" | "Tackle", elapsed: number) => {
+  const playOneShot = (name: OneShot, elapsed: number) => {
     const action = actions[name];
     if (!action) return;
     action.reset();
@@ -155,6 +160,18 @@ export const Player = forwardRef<THREE.Group, Props>(function Player(
     if (tackleCount !== lastTackle.current) {
       lastTackle.current = tackleCount;
       playOneShot("Tackle", elapsed);
+    }
+    // Goalkeeper dive: the clip goes to the keeper's right; mirror it (scale.x)
+    // when the dive is to the left. Falls back to Tackle on a model without it.
+    const diveCount = data.diveCount ?? 0;
+    if (diveCount !== lastDive.current) {
+      lastDive.current = diveCount;
+      const inner = innerRef.current;
+      if (inner) inner.scale.x = data.diveMirror ? -1 : 1;
+      playOneShot(actions["GK_Dive"] ? "GK_Dive" : "Tackle", elapsed);
+    }
+    if (elapsed >= oneShotUntil.current && innerRef.current && innerRef.current.scale.x !== 1) {
+      innerRef.current.scale.x = 1;
     }
 
     const inOneShot = elapsed < oneShotUntil.current;
@@ -185,8 +202,10 @@ export const Player = forwardRef<THREE.Group, Props>(function Player(
     lerpWeight(actions["Sprint"], sprintTarget);
     const kick = actions["Kick"];
     const tackle = actions["Tackle"];
+    const dive = actions["GK_Dive"];
     if (kick && !kick.isRunning()) kick.setEffectiveWeight(kickTackleTarget);
     if (tackle && !tackle.isRunning()) tackle.setEffectiveWeight(kickTackleTarget);
+    if (dive && !dive.isRunning()) dive.setEffectiveWeight(kickTackleTarget);
   });
 
   return (

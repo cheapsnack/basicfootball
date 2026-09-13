@@ -62,6 +62,7 @@ import {
   penaltySpot,
   RESTART_CLEARANCE,
 } from "../../game/logic/restarts";
+import { FIELD } from "../../game/logic/field";
 import { playAward, playCard, playCrowdGroan, playCrowdRoar, playKick, playWhistle } from "../../game/logic/audio";
 import { pickTakerIndex, takerPlacement } from "../../game/logic/setpiece";
 import { passAimDirection, selectPassTarget } from "../../game/logic/passing";
@@ -354,8 +355,16 @@ export function MatchScene({ getTouchInput }: { getTouchInput?: () => PlayerInpu
       if (!ref) return;
       ref.position.set(gk.position.x, 0, gk.position.z);
       ref.rotation.y = gk.heading;
-      ref.rotation.x = state.phase === "diving" ? state.diveDir * 0.95 : 0;
+      ref.rotation.x = 0;
       ref.userData["speed"] = Math.hypot(gk.velocity.x, gk.velocity.z);
+      // Fire the dive clip once per dive. The keeper's right-hand side in
+      // world z is sin(heading); mirror the clip when the dive goes the other way.
+      const data = ref.userData as { diveCount?: number; diveMirror?: boolean; divePhase?: string };
+      if (state.phase === "diving" && data.divePhase !== "diving") {
+        data.diveCount = (data.diveCount ?? 0) + 1;
+        data.diveMirror = Math.sign(state.diveDir) !== Math.sign(Math.sin(gk.heading));
+      }
+      data.divePhase = state.phase;
     };
     placeGK(homeGKRef.current, s.homeGK, s.homeGKState);
     placeGK(awayGKRef.current, s.awayGK, s.awayGKState);
@@ -1633,6 +1642,9 @@ function driveGoalkeeper(
       velocity: { x: v.x, y: 0, z: v.z },
       heading: -side * (Math.PI / 2),
     };
+    // A dive never carries the keeper past the post.
+    const maxZ = FIELD.goalHalfWidth + 0.6;
+    next.position.z = Math.max(-maxZ, Math.min(maxZ, next.position.z));
     return clampToPitch(next, PITCH.halfLength, PITCH.halfWidth, 1.5);
   }
   const next = stepMovement(state, decision.input, params, dt);
